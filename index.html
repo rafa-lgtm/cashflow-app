@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Previsión de Liquidez — Airwallex</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{--bg:#0f0f0f;--surface:#1a1a1a;--surface2:#222;--border:#2a2a2a;--text:#e8e8e8;--muted:#666;--green:#00d084;--blue:#4488ff;--red:#ff4455;--amber:#ffaa00}
+  body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;font-size:14px;min-height:100vh}
+  .app{max-width:1100px;margin:0 auto;padding:32px 24px}
+  .top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;border-bottom:1px solid var(--border);padding-bottom:20px}
+  .logo{display:flex;align-items:center;gap:12px}
+  .logo-mark{width:32px;height:32px;border-radius:8px;background:var(--green);display:flex;align-items:center;justify-content:center}
+  .logo-title{font-size:16px;font-weight:500;letter-spacing:-.02em}
+  .logo-sub{font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace}
+  .status-pill{display:flex;align-items:center;gap:7px;padding:5px 12px;border-radius:20px;border:1px solid var(--border);font-size:12px;font-family:'IBM Plex Mono',monospace;color:var(--muted)}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--muted);flex-shrink:0}
+  .dot.green{background:var(--green);box-shadow:0 0 6px var(--green)}
+  .dot.amber{background:var(--amber);animation:pulse 1s infinite}
+  .dot.red{background:var(--red)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .api-section{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:16px}
+  .api-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .api-label{font-size:11px;font-family:'IBM Plex Mono',monospace;color:var(--muted);white-space:nowrap}
+  .api-section input{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 11px;font-size:12px;font-family:'IBM Plex Mono',monospace;color:var(--text);outline:none;transition:border-color .15s}
+  .api-section input:focus{border-color:#444}
+  .api-section input::placeholder{color:var(--muted)}
+  .btn{padding:7px 14px;border-radius:8px;border:1px solid var(--border);background:transparent;font-size:12px;cursor:pointer;color:var(--text);display:inline-flex;align-items:center;gap:6px;transition:all .15s;white-space:nowrap}
+  .btn:hover{background:var(--surface2);border-color:#444}
+  .btn.green{background:var(--green);color:#000;border-color:var(--green);font-weight:500}
+  .btn.green:hover{background:#00b870}
+  .btn.ghost{color:var(--muted);font-size:11px;font-family:'IBM Plex Mono',monospace;padding:5px 10px}
+  .btn.ghost:hover{color:var(--text)}
+  .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
+  .metric{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;position:relative;overflow:hidden}
+  .metric::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+  .m-green::before{background:var(--green)}.m-blue::before{background:var(--blue)}.m-red::before{background:var(--red)}.m-amber::before{background:var(--amber)}
+  .metric-label{font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em}
+  .metric-value{font-size:22px;font-weight:300;letter-spacing:-.03em;line-height:1}
+  .metric-value.green{color:var(--green)}.metric-value.red{color:var(--red)}.metric-value.amber{color:var(--amber)}
+  .metric-sub{font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--muted);margin-top:6px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px}
+  .panel-title{font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
+  .chart-wrap{height:160px;position:relative}
+  .table-panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:18px}
+  .table-header{padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .table-header-title{font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .tag{font-size:10px;font-family:'IBM Plex Mono',monospace;padding:2px 7px;border-radius:4px;display:inline-block}
+  .tag-real{background:rgba(0,208,132,.1);color:var(--green);border:1px solid rgba(0,208,132,.2)}
+  .tag-prev{background:rgba(68,136,255,.1);color:var(--blue);border:1px solid rgba(68,136,255,.2)}
+  table{width:100%;border-collapse:collapse}
+  th{padding:8px 18px;text-align:left;font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--border);background:rgba(255,255,255,.02)}
+  td{padding:10px 18px;border-bottom:1px solid rgba(255,255,255,.04);font-size:12px}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:rgba(255,255,255,.02)}
+  td.mono{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted)}
+  td.tgreen{color:var(--green);font-family:'IBM Plex Mono',monospace}
+  td.tred{color:var(--red);font-family:'IBM Plex Mono',monospace}
+  td.tbal{font-family:'IBM Plex Mono',monospace;font-size:11px;color:#888}
+  .cat-pill{font-size:10px;padding:2px 7px;border-radius:4px;font-family:'IBM Plex Mono',monospace}
+  .add-row{display:flex;gap:8px;padding:10px 18px;background:rgba(255,255,255,.02);border-top:1px solid var(--border);flex-wrap:wrap;align-items:center}
+  .add-row input,.add-row select{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:12px;font-family:'IBM Plex Sans',sans-serif;color:var(--text);outline:none}
+  .add-row input:focus,.add-row select:focus{border-color:#444}
+  .add-row select option{background:#1a1a1a}
+  .add-row input::placeholder{color:var(--muted)}
+  .debug-panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:16px}
+  .step-line{display:flex;align-items:flex-start;gap:10px;padding:5px 0;font-size:11px;font-family:'IBM Plex Mono',monospace;border-bottom:1px solid rgba(255,255,255,.04)}
+  .step-line:last-child{border-bottom:none}
+  .sico{width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;flex-shrink:0;margin-top:1px}
+  .sico.ok{background:rgba(0,208,132,.2);color:var(--green)}
+  .sico.err{background:rgba(255,68,85,.2);color:var(--red)}
+  .sico.spin{background:rgba(68,136,255,.2);color:var(--blue)}
+  .sico.wait{background:rgba(255,255,255,.05);color:var(--muted)}
+  .raw-out{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);line-height:1.6}
+  @media(max-width:720px){.metrics{grid-template-columns:1fr 1fr}.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="top-bar">
+    <div class="logo">
+      <div class="logo-mark"><svg viewBox="0 0 16 16" fill="none" width="16" height="16"><path d="M3 8h10M8 3v10" stroke="#000" stroke-width="2.5" stroke-linecap="round"/></svg></div>
+      <div>
+        <div class="logo-title">Cash Flow Forecast</div>
+        <div class="logo-sub">icon ecom limited · airwallex</div>
+      </div>
+    </div>
+    <div class="status-pill"><div class="dot" id="sDot"></div><span id="sTxt">sin conectar</span></div>
+  </div>
+
+  <div class="api-section">
+    <div class="api-row">
+      <span class="api-label">credentials /</span>
+      <input type="password" id="clientId" placeholder="client_id" style="width:170px" value="fcdc7a344c32fb499e874621dcce9a7e5412eb19e5187981ba0f49c676b68381de56c7919fc3d3f5c8c9e45524e87ebe">
+      <input type="password" id="apiKey" placeholder="api_key" style="flex:1;min-width:160px" value="1Pjl6QFbRf2jXlG_lhf68w">
+      <span class="api-label" style="margin-left:8px">saldo actual €</span>
+      <input type="number" id="manualBal" placeholder="ej: 250000" style="width:130px">
+      <button class="btn green" onclick="connectAirwallex()">▶ conectar</button>
+      <button class="btn ghost" onclick="toggleDebug()">debug</button>
+    </div>
+  </div>
+
+  <div id="debugPanel" style="display:none" class="debug-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <span style="font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">connection log</span>
+      <button class="btn ghost" onclick="clearDebug()">limpiar</button>
+    </div>
+    <div id="stepsLog"></div>
+    <div id="rawOut" class="raw-out" style="display:none"></div>
+  </div>
+
+  <div class="metrics">
+    <div class="metric m-green">
+      <div class="metric-label">saldo actual</div>
+      <div class="metric-value green" id="mBal">—</div>
+      <div class="metric-sub" id="mBalSub">introduce saldo arriba</div>
+    </div>
+    <div class="metric m-red">
+      <div class="metric-label">salidas cargadas</div>
+      <div class="metric-value red" id="mOut">—</div>
+      <div class="metric-sub" id="mOutSub">pagos reales</div>
+    </div>
+    <div class="metric m-blue">
+      <div class="metric-label">previsión 30d</div>
+      <div class="metric-value" id="mFc">—</div>
+      <div class="metric-sub">saldo proyectado</div>
+    </div>
+    <div class="metric m-amber">
+      <div class="metric-label">gastos previstos</div>
+      <div class="metric-value amber" id="mExp">—</div>
+      <div class="metric-sub">próximos 30 días</div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <div class="panel-title"><span>salidas reales por día</span><span class="tag tag-real">real</span></div>
+      <div class="chart-wrap"><canvas id="cReal"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title"><span>proyección liquidez</span><span class="tag tag-prev">previsión</span></div>
+      <div class="chart-wrap"><canvas id="cFc"></canvas></div>
+    </div>
+  </div>
+
+  <div class="table-panel">
+    <div class="table-header">
+      <div class="table-header-title">movimientos y previsiones</div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span class="tag tag-real">real</span>
+        <span class="tag tag-prev">previsión</span>
+        <button class="btn ghost" onclick="exportCSV()">↓ csv</button>
+      </div>
+    </div>
+    <table>
+      <thead><tr>
+        <th>fecha</th><th>concepto</th><th>beneficiario</th><th>categoría</th>
+        <th style="text-align:right">importe EUR</th><th style="text-align:right">saldo est.</th><th>tipo</th>
+      </tr></thead>
+      <tbody id="txTable"></tbody>
+    </table>
+    <div class="add-row">
+      <input type="date" id="nDate" style="width:130px">
+      <input type="text" id="nDesc" placeholder="concepto" style="flex:1;min-width:120px">
+      <input type="text" id="nBenef" placeholder="beneficiario" style="width:140px">
+      <select id="nCat">
+        <option value="marketing">Marketing</option>
+        <option value="logistica">Logística</option>
+        <option value="proveedores">Proveedores</option>
+        <option value="freelancers">Freelancers</option>
+        <option value="nominas">Nóminas</option>
+        <option value="impuestos">Impuestos</option>
+        <option value="otros">Otros gastos</option>
+        <option value="ingresos">Ingresos</option>
+      </select>
+      <input type="number" id="nAmt" placeholder="importe € (negativo=gasto)" style="width:180px">
+      <button class="btn green" onclick="addForecast()">+ añadir previsión</button>
+    </div>
+  </div>
+
+</div>
+<script>
+const today=new Date();
+function fmt(d){return new Date(d).toISOString().split('T')[0]}
+function dAhead(n){const d=new Date(today);d.setDate(d.getDate()+n);return fmt(d)}
+
+let debugOpen=false,rawLog={},liveBal=null,txs=[],forecasts=[];
+
+const CAT_COLORS={
+  marketing:['rgba(68,136,255,.15)','#4488ff'],
+  logistica:['rgba(0,208,132,.15)','#00d084'],
+  proveedores:['rgba(255,170,0,.15)','#ffaa00'],
+  freelancers:['rgba(180,100,255,.15)','#b464ff'],
+  nominas:['rgba(255,100,100,.15)','#ff6464'],
+  impuestos:['rgba(255,68,85,.15)','#ff4455'],
+  otros:['rgba(120,120,120,.15)','#888'],
+  ingresos:['rgba(0,208,132,.15)','#00d084'],
+};
+
+function guessCategory(ref,reason){
+  const r=((ref||'')+(reason||'')).toLowerCase();
+  if(/marketing|advertis|ads/.test(r)) return 'marketing';
+  if(/logistic|express|correo|ctt|transport/.test(r)) return 'logistica';
+  if(/freelancer/.test(r)) return 'freelancers';
+  if(/nomina|salary|payroll/.test(r)) return 'nominas';
+  if(/goods|ecommerce|e-commerce|mercan|invoice/.test(r)) return 'proveedores';
+  if(/refund|reembolso/.test(r)) return 'otros';
+  return 'otros';
+}
+function catPill(cat){
+  const [bg,col]=CAT_COLORS[cat]||CAT_COLORS.otros;
+  return `<span class="cat-pill" style="background:${bg};color:${col}">${cat}</span>`;
+}
+function fmtEur(v){return Math.round(v).toLocaleString('es-ES',{style:'currency',currency:'EUR',minimumFractionDigits:0})}
+function setStatus(t,c){document.getElementById('sDot').className='dot'+(c?' '+c:'');document.getElementById('sTxt').textContent=t}
+function toggleDebug(){debugOpen=!debugOpen;document.getElementById('debugPanel').style.display=debugOpen?'block':'none'}
+function clearDebug(){document.getElementById('stepsLog').innerHTML='';document.getElementById('rawOut').style.display='none';rawLog={}}
+
+function addStep(label,state){
+  const el=document.getElementById('stepsLog');
+  const id='s'+Date.now()+Math.random().toString(36).slice(2,5);
+  const ico={ok:'✓',err:'✗',spin:'↻',wait:'·'}[state]||'·';
+  const div=document.createElement('div');div.className='step-line';div.id=id;
+  div.innerHTML=`<div class="sico ${state}">${ico}</div><span style="color:var(--text);flex:1;line-height:1.4">${label}</span>`;
+  el.appendChild(div);return id;
+}
+function updStep(id,label,state){
+  const d=document.getElementById(id);if(!d)return;
+  const ico={ok:'✓',err:'✗',spin:'↻',wait:'·'}[state]||'·';
+  d.querySelector('.sico').className=`sico ${state}`;d.querySelector('.sico').textContent=ico;
+  d.querySelectorAll('span')[0].textContent=label;
+}
+function showRaw(key,data){
+  rawLog[key]=data;
+  const el=document.getElementById('rawOut');el.style.display='block';
+  el.textContent=Object.entries(rawLog).map(([k,v])=>`// ${k}\n${JSON.stringify(v,null,2)}`).join('\n\n');
+}
+
+async function tryFetch(url, token){
+  const r=await fetch(url,{headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'}});
+  const d=await r.json();
+  return {status:r.status, ok:r.ok, data:d};
+}
+
+async function connectAirwallex(){
+  const cid=document.getElementById('clientId').value.trim();
+  const key=document.getElementById('apiKey').value.trim();
+  if(!cid||!key){alert('Introduce Client ID y API Key');return;}
+  if(!debugOpen)toggleDebug();
+  clearDebug();
+  setStatus('conectando...','amber');
+
+  // 1. Auth
+  const s1=addStep('POST /authentication/login','spin');
+  let token;
+  try{
+    const r=await fetch('https://api.airwallex.com/api/v1/authentication/login',{
+      method:'POST',headers:{'Content-Type':'application/json','x-client-id':cid,'x-api-key':key}
+    });
+    const data=await r.json();
+    if(data.token){
+      token=data.token;
+      updStep(s1,'✓ Auth OK (status '+r.status+')','ok');
+    } else {
+      updStep(s1,'✗ Auth fallida: '+JSON.stringify(data),'err');
+      setStatus('error auth','red');return;
+    }
+  }catch(e){updStep(s1,'✗ Error red: '+e.message,'err');setStatus('error','red');return;}
+
+  // 2. Saldo — probamos todos los endpoints posibles según los scopes del JWT
+  const s2=addStep('Buscando saldo en todos los endpoints posibles…','spin');
+  const balEndpoints=[
+    // Según scope "core_banking.wallet.balances"
+    '/api/v1/core_banking/wallet/balances',
+    '/api/v1/core-banking/wallet/balances',
+    // Según scope "core_banking.wallet.balances.*"
+    '/api/v1/wallets/balances',
+    '/api/v1/wallet/balances',
+    // Endpoints estándar
+    '/api/v1/balances',
+    '/api/v1/financial_accounts',
+    // Con account_id del JWT
+    '/api/v1/accounts/2ca243b9-3229-4365-8a6f-fe46e2923684/balances',
+    '/api/v1/accounts/2ca243b9-3229-4365-8a6f-fe46e2923684',
+  ];
+
+  let balFound=false;
+  for(const ep of balEndpoints){
+    try{
+      const {status,ok,data}=await tryFetch('https://api.airwallex.com'+ep, token);
+      showRaw('bal '+ep+' ('+status+')', ok?data:{code:data.code,message:data.message});
+      if(ok){
+        updStep(s2,'✓ Saldo encontrado en '+ep,'ok');
+        parseBalance(data, ep);
+        balFound=true;
+        break;
+      }
+    }catch(e){/* silencioso */}
+  }
+
+  if(!balFound){
+    // Intentar con treasury_management scope
+    const tmEndpoints=[
+      '/api/v1/treasury_management/wallet/transactions',
+      '/api/v1/treasury-management/wallet/transactions',
+    ];
+    for(const ep of tmEndpoints){
+      try{
+        const {status,ok,data}=await tryFetch('https://api.airwallex.com'+ep+'?page_num=0&page_size=1', token);
+        showRaw('treasury '+ep+' ('+status+')', ok?{sample:data}:{code:data.code,msg:data.message});
+        if(ok){
+          updStep(s2,'⚠ Sin balance directo — usando campo "saldo actual €" arriba','wait');
+          break;
+        }
+      }catch(e){}
+    }
+    if(!balFound){
+      updStep(s2,'⚠ Saldo no disponible por API — introduce el saldo manualmente arriba','wait');
+      const manual=parseFloat(document.getElementById('manualBal').value);
+      if(!isNaN(manual)&&manual>0){
+        liveBal=manual;
+        document.getElementById('mBal').textContent=fmtEur(manual);
+        document.getElementById('mBalSub').textContent='— manual';
+      }
+    }
+  }
+
+  // 3. Pagos (todos los que podamos)
+  const s3=addStep('Cargando pagos /api/v1/payments…','spin');
+  let allPayments=[];
+  try{
+    let page=0,hasMore=true;
+    while(hasMore&&page<20){
+      const {status,ok,data}=await tryFetch(
+        `https://api.airwallex.com/api/v1/payments?page_num=${page}&page_size=25&status=PAID`, token
+      );
+      if(page===0)showRaw('payments p0 ('+status+')',{has_more:data.has_more,count:data.items?.length,first_item_keys:data.items?.[0]?Object.keys(data.items[0]):[]});
+      if(!ok){updStep(s3,'✗ Error pagos: '+data.message,'err');break;}
+      allPayments=[...allPayments,...(data.items||[])];
+      hasMore=!!data.has_more;page++;
+    }
+    updStep(s3,`✓ ${allPayments.length} pagos cargados (${page} páginas)`,'ok');
+    parsePayments(allPayments);
+  }catch(e){updStep(s3,'✗ '+e.message,'err');}
+
+  // 4. Intentar también transfers
+  const s4=addStep('Cargando transferencias /api/v1/transfers…','spin');
+  try{
+    const {status,ok,data}=await tryFetch(
+      'https://api.airwallex.com/api/v1/transfers?page_num=0&page_size=25', token
+    );
+    showRaw('transfers ('+status+')',ok?{count:data.items?.length,sample:data.items?.[0]}:{code:data.code,msg:data.message});
+    if(ok&&data.items?.length){
+      updStep(s4,'✓ '+data.items.length+' transferencias','ok');
+      parseTransfers(data.items);
+    } else {
+      updStep(s4,'— Sin transferencias o sin acceso','wait');
+    }
+  }catch(e){updStep(s4,'— '+e.message,'wait');}
+
+  setStatus('conectado','green');
+  renderAll();
+}
+
+function parseBalance(data, ep){
+  let b=null;
+  const tryGet=obj=>parseFloat(obj?.available_amount??obj?.total_amount??obj?.amount??obj?.balance??obj?.availableBalance??'NaN');
+  if(Array.isArray(data)){
+    const eur=data.find(x=>(x.currency||x.currency_code)==='EUR')||data[0];
+    b=tryGet(eur);
+  } else if(data.balances){
+    const eur=data.balances.find(x=>(x.currency||x.currency_code)==='EUR')||data.balances[0];
+    b=tryGet(eur);
+  } else if(data.items){
+    const eur=data.items.find(x=>(x.currency||x.currency_code)==='EUR')||data.items[0];
+    b=tryGet(eur);
+  } else {
+    b=tryGet(data);
+  }
+  if(b&&!isNaN(b)&&b>0){
+    liveBal=b;
+    document.getElementById('mBal').textContent=fmtEur(b);
+    document.getElementById('mBalSub').textContent='— airwallex live';
+    document.getElementById('manualBal').value=Math.round(b);
+  }
+}
+
+function parsePayments(items){
+  const parsed=items.map(p=>{
+    // source_amount = lo que sale en EUR de tu cuenta
+    const eur=p.source_currency==='EUR'?p.source_amount:(p.amount_payer_pays||p.source_amount||0);
+    return{
+      date:(p.payment_date||p.dispatch_date||p.created_at||'').slice(0,10),
+      desc:p.reference||p.short_reference_id||'Pago',
+      benef:p.beneficiary?.bank_details?.account_name||'—',
+      cat:guessCategory(p.reference,p.reason),
+      amount:-Math.abs(parseFloat(eur)||0),
+      type:'real',id:p.payment_id
+    };
+  }).filter(t=>t.date&&t.amount!==0);
+  txs=[...txs.filter(t=>t.source!=='payments'),...parsed.map(t=>({...t,source:'payments'}))];
+}
+
+function parseTransfers(items){
+  const parsed=items.map(t=>{
+    const amt=parseFloat(t.amount||t.source_amount||0);
+    return{
+      date:(t.created_at||t.date||'').slice(0,10),
+      desc:t.reference||t.reason||'Transferencia',
+      benef:t.beneficiary?.bank_details?.account_name||'—',
+      cat:'otros',
+      amount:-Math.abs(amt),
+      type:'real',id:t.transfer_id||t.id
+    };
+  }).filter(t=>t.date&&t.amount!==0);
+  txs=[...txs.filter(t=>t.source!=='transfers'),...parsed.map(t=>({...t,source:'transfers'}))];
+}
+
+function renderAll(){
+  const bal=liveBal||parseFloat(document.getElementById('manualBal').value)||0;
+  if(!bal){return;}
+
+  const allTxs=[...txs,...forecasts].sort((a,b)=>a.date.localeCompare(b.date));
+  const startBal=bal-txs.reduce((s,t)=>s+t.amount,0);
+
+  let b=startBal;
+  const today2=fmt(today);
+  const tbody=document.getElementById('txTable');
+  tbody.innerHTML='';
+  allTxs.forEach(t=>{
+    b+=t.amount;
+    const tr=document.createElement('tr');
+    const ac=t.amount>=0?'tgreen':'tred';
+    const as=(t.amount>=0?'+':'')+fmtEur(t.amount);
+    tr.innerHTML=`
+      <td class="mono">${t.date}</td>
+      <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.desc}</td>
+      <td class="mono" style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px">${t.benef||'—'}</td>
+      <td>${catPill(t.cat)}</td>
+      <td style="text-align:right" class="${ac}">${as}</td>
+      <td style="text-align:right" class="tbal">${fmtEur(b)}</td>
+      <td><span class="tag ${t.type==='real'?'tag-real':'tag-prev'}">${t.type==='real'?'real':'prev'}</span></td>`;
+    tbody.appendChild(tr);
+  });
+
+  const totalOut=txs.reduce((s,t)=>s+t.amount,0);
+  const prevExp=forecasts.filter(t=>t.amount<0).reduce((s,t)=>s+t.amount,0);
+  document.getElementById('mOut').textContent=fmtEur(totalOut);
+  document.getElementById('mOutSub').textContent=txs.length+' pagos';
+  document.getElementById('mFc').textContent=fmtEur(b);
+  document.getElementById('mFc').className='metric-value '+(b>0?'green':'red');
+  document.getElementById('mExp').textContent=fmtEur(prevExp);
+  if(bal>0){
+    document.getElementById('mBal').textContent=fmtEur(bal);
+    if(!liveBal)document.getElementById('mBalSub').textContent='— manual';
+  }
+  renderCharts(allTxs,startBal);
+}
+
+let c1=null,c2=null;
+function renderCharts(allTxs,startBal){
+  const today2=fmt(today);
+  const gc='rgba(255,255,255,.05)',tc='rgba(255,255,255,.3)';
+  const mf="'IBM Plex Mono',monospace";
+
+  // Barras: salidas reales agrupadas por día
+  const byDate={};
+  allTxs.filter(t=>t.type==='real'&&t.date<=today2).forEach(t=>{
+    byDate[t.date]=(byDate[t.date]||0)+Math.abs(t.amount);
+  });
+  const dates=Object.keys(byDate).sort();
+
+  if(c1)c1.destroy();
+  c1=new Chart(document.getElementById('cReal').getContext('2d'),{
+    type:'bar',
+    data:{labels:dates.map(d=>d.slice(5)),datasets:[{
+      data:dates.map(d=>byDate[d]),
+      backgroundColor:'rgba(255,68,85,.25)',borderColor:'#ff4455',borderWidth:1,borderRadius:3
+    }]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'−€'+Math.round(c.parsed.y).toLocaleString('es-ES')},backgroundColor:'#1a1a1a',borderColor:'#333',borderWidth:1,titleColor:'#888',bodyColor:tc,titleFont:{family:mf,size:10},bodyFont:{family:mf,size:10}}},
+      scales:{x:{grid:{color:gc},ticks:{color:tc,font:{size:9,family:mf},maxRotation:45}},y:{grid:{color:gc},ticks:{color:tc,font:{size:9,family:mf},callback:v=>'€'+Math.round(v/1000)+'k'}}}}
+  });
+
+  // Línea: proyección
+  let b=startBal;
+  const fcLabels=[],fcData=[];
+  allTxs.filter(t=>t.date<=today2).forEach(t=>b+=t.amount);
+  fcLabels.push('hoy');fcData.push(Math.round(b));
+  allTxs.filter(t=>t.date>today2).forEach(t=>{b+=t.amount;fcLabels.push(t.date.slice(5));fcData.push(Math.round(b));});
+
+  const rising=fcData.length<2||(fcData[fcData.length-1]>=fcData[0]);
+  if(c2)c2.destroy();
+  c2=new Chart(document.getElementById('cFc').getContext('2d'),{
+    type:'line',
+    data:{labels:fcLabels,datasets:[{
+      data:fcData,borderColor:rising?'#00d084':'#ff4455',
+      backgroundColor:rising?'rgba(0,208,132,.06)':'rgba(255,68,85,.06)',
+      tension:.35,pointRadius:3,borderWidth:1.5,fill:true
+    }]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'€'+Math.round(c.parsed.y).toLocaleString('es-ES')},backgroundColor:'#1a1a1a',borderColor:'#333',borderWidth:1,titleColor:'#888',bodyColor:tc,titleFont:{family:mf,size:10},bodyFont:{family:mf,size:10}}},
+      scales:{x:{grid:{color:gc},ticks:{color:tc,font:{size:9,family:mf},maxRotation:0}},y:{grid:{color:gc},ticks:{color:tc,font:{size:9,family:mf},callback:v=>'€'+Math.round(v/1000)+'k'}}}}
+  });
+}
+
+function addForecast(){
+  const date=document.getElementById('nDate').value;
+  const desc=document.getElementById('nDesc').value.trim();
+  const benef=document.getElementById('nBenef').value.trim()||'—';
+  const cat=document.getElementById('nCat').value;
+  const amt=parseFloat(document.getElementById('nAmt').value);
+  if(!date||!desc||isNaN(amt)){alert('Completa fecha, concepto e importe');return;}
+  forecasts.push({date,desc,benef,cat,amount:amt,type:'prev',id:'fc_'+Date.now()});
+  document.getElementById('nDesc').value='';document.getElementById('nBenef').value='';document.getElementById('nAmt').value='';
+  renderAll();
+}
+
+document.getElementById('manualBal').addEventListener('change',()=>{
+  const v=parseFloat(document.getElementById('manualBal').value);
+  if(!isNaN(v)&&v>0){if(!liveBal)renderAll();}
+});
+
+function exportCSV(){
+  const all=[...txs,...forecasts].sort((a,b)=>a.date.localeCompare(b.date));
+  const rows=[['fecha','concepto','beneficiario','categoria','importe_eur','tipo']];
+  all.forEach(t=>rows.push([t.date,t.desc,t.benef||'',t.cat,t.amount,t.type]));
+  const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);
+  a.download='cashflow_'+fmt(today)+'.csv';a.click();
+}
+
+const nd=new Date(today);nd.setDate(nd.getDate()+7);
+document.getElementById('nDate').value=fmt(nd);
+</script>
+</body>
+</html>
