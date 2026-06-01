@@ -242,7 +242,8 @@ function showRaw(key,data){
 }
 
 async function tryFetch(url, token){
-  const r=await fetch(url,{headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'}});
+  const endpoint=url.replace('https://api.airwallex.com','');
+  const r=await fetch('/proxy/airwallex?endpoint='+encodeURIComponent(endpoint)+'&token='+encodeURIComponent(token));
   const d=await r.json();
   return {status:r.status, ok:r.ok, data:d};
 }
@@ -259,8 +260,9 @@ async function connectAirwallex(){
   const s1=addStep('POST /authentication/login','spin');
   let token;
   try{
-    const r=await fetch('https://api.airwallex.com/api/v1/authentication/login',{
-      method:'POST',headers:{'Content-Type':'application/json','x-client-id':cid,'x-api-key':key}
+    const r=await fetch('/proxy/auth',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({clientId:cid,apiKey:key})
     });
     const data=await r.json();
     if(data.token){
