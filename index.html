@@ -685,7 +685,7 @@ async function loadCobros(){
   let data=null;
   const H=parseInt(document.getElementById('horizon').value)||30;
   try{
-    const r=await fetch(COD_DASHBOARD_URL+'/api/prevision-cobros?dias='+H,{credentials:'include'});
+    const r=await fetch(COD_DASHBOARD_URL+'/api/prevision-cobros?dias='+H);
     if(r.ok) data=await r.json();
   }catch(e){}
 
