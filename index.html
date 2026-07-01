@@ -100,7 +100,15 @@
       <input type="password" id="apiKey" placeholder="api_key" style="flex:1;min-width:160px" >
       <span class="api-label" style="margin-left:8px">saldo actual €</span>
       <input type="number" id="manualBal" placeholder="ej: 250000" style="width:130px">
+      <span class="api-label" style="margin-left:8px">horizonte</span>
+      <select id="horizon" onchange="renderAll()" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 11px;font-size:12px;font-family:'IBM Plex Mono',monospace;color:var(--text);outline:none">
+        <option value="7">7 días</option>
+        <option value="15">15 días</option>
+        <option value="30" selected>30 días</option>
+        <option value="60">60 días</option>
+      </select>
       <button class="btn green" onclick="connectAirwallex()">▶ conectar</button>
+      <button class="btn" onclick="loadCobros()">↑ cargar previsión cobros</button>
       <button class="btn ghost" onclick="toggleDebug()">debug</button>
     </div>
   </div>
@@ -126,14 +134,14 @@
       <div class="metric-sub" id="mOutSub">pagos reales</div>
     </div>
     <div class="metric m-blue">
-      <div class="metric-label">previsión 30d</div>
+      <div class="metric-label" id="mFcLabel">previsión 30d</div>
       <div class="metric-value" id="mFc">—</div>
-      <div class="metric-sub">saldo proyectado</div>
+      <div class="metric-sub" id="mFcSub">saldo proyectado</div>
     </div>
     <div class="metric m-amber">
-      <div class="metric-label">gastos previstos</div>
-      <div class="metric-value amber" id="mExp">—</div>
-      <div class="metric-sub">próximos 30 días</div>
+      <div class="metric-label">saldo mínimo (valle)</div>
+      <div class="metric-value amber" id="mMin">—</div>
+      <div class="metric-sub" id="mMinSub">punto más bajo del periodo</div>
     </div>
   </div>
 
@@ -146,6 +154,22 @@
       <div class="panel-title"><span>proyección liquidez</span><span class="tag tag-prev">previsión</span></div>
       <div class="chart-wrap"><canvas id="cFc"></canvas></div>
     </div>
+  </div>
+
+  <div class="table-panel" id="projSummary" style="display:none">
+    <div class="table-header">
+      <div class="table-header-title">saldo proyectado — resumen</div>
+      <span class="tag tag-prev">previsión</span>
+    </div>
+    <table>
+      <thead><tr>
+        <th>hito</th><th>fecha</th>
+        <th style="text-align:right">entradas periodo</th>
+        <th style="text-align:right">salidas periodo</th>
+        <th style="text-align:right">saldo proyectado</th>
+      </tr></thead>
+      <tbody id="projTable"></tbody>
+    </table>
   </div>
 
   <div class="table-panel">
@@ -178,7 +202,11 @@
         <option value="otros">Otros gastos</option>
         <option value="ingresos">Ingresos</option>
       </select>
-      <input type="number" id="nAmt" placeholder="importe € (negativo=gasto)" style="width:180px">
+      <select id="nType">
+        <option value="gasto" selected>Gasto (−)</option>
+        <option value="ingreso">Ingreso (+)</option>
+      </select>
+      <input type="number" id="nAmt" placeholder="importe € (positivo)" min="0" step="0.01" style="width:160px">
       <button class="btn green" onclick="addForecast()">+ añadir previsión</button>
     </div>
   </div>
@@ -190,6 +218,18 @@ function fmt(d){return new Date(d).toISOString().split('T')[0]}
 function dAhead(n){const d=new Date(today);d.setDate(d.getDate()+n);return fmt(d)}
 
 let debugOpen=false,rawLog={},liveBal=null,txs=[],forecasts=[];
+
+const LS_KEY='cashflow_forecasts_v1';
+function saveForecasts(){
+  try{ localStorage.setItem(LS_KEY, JSON.stringify(forecasts)); }
+  catch(e){ /* localStorage no disponible */ }
+}
+function loadForecasts(){
+  try{
+    const raw=localStorage.getItem(LS_KEY);
+    if(raw){ const arr=JSON.parse(raw); if(Array.isArray(arr)) forecasts=arr; }
+  }catch(e){}
+}
 
 const CAT_COLORS={
   marketing:['rgba(68,136,255,.15)','#4488ff'],
@@ -486,23 +526,74 @@ function renderAll(){
       <td>${catPill(t.cat)}</td>
       <td style="text-align:right" class="${ac}">${as}</td>
       <td style="text-align:right" class="tbal">${fmtEur(b)}</td>
-      <td><span class="tag ${t.type==='real'?'tag-real':'tag-prev'}">${t.type==='real'?'real':'prev'}</span></td>`;
+      <td><span class="tag ${t.type==='real'?'tag-real':'tag-prev'}">${t.type==='real'?'real':'prev'}</span>${t.type==='prev'?` <span onclick="delForecast('${t.id}')" title="borrar" style="cursor:pointer;color:var(--muted);margin-left:4px">✕</span>`:''}</td>`;
     tbody.appendChild(tr);
   });
 
   const totalOut=txs.filter(t=>t.amount<0).reduce((s,t)=>s+t.amount,0);
   const totalIn=txs.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
-  const prevExp=forecasts.filter(t=>t.amount<0).reduce((s,t)=>s+t.amount,0);
   document.getElementById('mOut').textContent=fmtEur(totalOut);
   document.getElementById('mOutSub').textContent=txs.length+' movimientos · entradas '+fmtEur(totalIn);
-  document.getElementById('mFc').textContent=fmtEur(b);
-  document.getElementById('mFc').className='metric-value '+(b>0?'green':'red');
-  document.getElementById('mExp').textContent=fmtEur(prevExp);
   if(bal>0){
     document.getElementById('mBal').textContent=fmtEur(bal);
     if(!liveBal)document.getElementById('mBalSub').textContent='— manual';
   }
-  renderCharts(allTxs,startBal);
+
+  // ── Proyección por horizonte ──────────────────────────────
+  const H=parseInt(document.getElementById('horizon').value)||30;
+  const limit=dAhead(H);
+  document.getElementById('mFcLabel').textContent='previsión '+H+'d';
+
+  // Recorrer día a día desde hoy hasta el horizonte, acumulando saldo
+  // partiendo del saldo REAL de hoy (bal), sumando solo movimientos futuros.
+  const future=allTxs.filter(t=>t.date>today2 && t.date<=limit)
+                     .sort((a,b)=>a.date.localeCompare(b.date));
+  let run=bal, minBal=bal, minDate=today2;
+  future.forEach(t=>{
+    run+=t.amount;
+    if(run<minBal){minBal=run;minDate=t.date;}
+  });
+  const endBal=run;
+
+  document.getElementById('mFc').textContent=fmtEur(endBal);
+  document.getElementById('mFc').className='metric-value '+(endBal>0?'green':'red');
+  document.getElementById('mFcSub').textContent='al '+limit;
+
+  document.getElementById('mMin').textContent=fmtEur(minBal);
+  document.getElementById('mMin').className='metric-value '+(minBal>0?'amber':'red');
+  document.getElementById('mMinSub').textContent=minBal<minBalRef?('⚠ bajo colchón · '+minDate):('el '+minDate);
+
+  // ── Tabla resumen por hitos ───────────────────────────────
+  renderProjSummary(bal, allTxs, today2);
+
+  renderCharts(allTxs.filter(t=>t.date<=limit),startBal);
+}
+
+let minBalRef=-Infinity; // sin umbral por ahora
+
+function renderProjSummary(bal, allTxs, today2){
+  const panel=document.getElementById('projSummary');
+  const tb=document.getElementById('projTable');
+  const hitos=[7,15,30,60];
+  tb.innerHTML='';
+  let any=false;
+  hitos.forEach(h=>{
+    const lim=dAhead(h);
+    const period=allTxs.filter(t=>t.date>today2 && t.date<=lim);
+    const inSum=period.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
+    const outSum=period.filter(t=>t.amount<0).reduce((s,t)=>s+t.amount,0);
+    const proj=bal+inSum+outSum;
+    if(period.length)any=true;
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td class="mono">+${h}d</td>
+      <td class="mono">${lim}</td>
+      <td style="text-align:right" class="tgreen">${inSum>0?'+'+fmtEur(inSum):'—'}</td>
+      <td style="text-align:right" class="tred">${outSum<0?fmtEur(outSum):'—'}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;color:${proj>0?'var(--green)':'var(--red)'}">${fmtEur(proj)}</td>`;
+    tb.appendChild(tr);
+  });
+  panel.style.display=any?'block':'none';
 }
 
 let c1=null,c2=null;
@@ -552,15 +643,74 @@ function renderCharts(allTxs,startBal){
   });
 }
 
+// ── Cargar previsión de cobros CEX/CTT ────────────────────────
+// Intenta leer del backend (/proxy/cobros). Si no existe todavía,
+// permite pegar el JSON generado con el modelo Cobros_Transportistas.
+// Formato esperado: [{"date":"2026-06-17","cex":6000,"ctt":3897}, ...]
+//              o bien: [{"date":"2026-06-17","total":9897}, ...]
+async function loadCobros(){
+  let data=null;
+  try{
+    const r=await fetch('/proxy/cobros',{credentials:'include'});
+    if(r.ok) data=await r.json();
+  }catch(e){}
+
+  if(!data){
+    const pasted=prompt('No hay endpoint de cobros en el backend todavía.\nPega aquí el JSON de la previsión (formato: [{"date":"2026-06-17","cex":6000,"ctt":3897}, ...] ):');
+    if(!pasted) return;
+    try{ data=JSON.parse(pasted); }
+    catch(e){ alert('JSON no válido: '+e.message); return; }
+  }
+  parseCobros(data);
+  renderAll();
+}
+
+function parseCobros(data){
+  const arr=Array.isArray(data)?data:(data.items||data.previsión||data.prevision||[]);
+  // Quitar cobros previamente cargados para no duplicar
+  forecasts=forecasts.filter(f=>f.source!=='cobros');
+  let n=0;
+  arr.forEach(row=>{
+    const date=(row.date||row.fecha||'').slice(0,10);
+    if(!date) return;
+    const cex=parseFloat(row.cex||row.CEX||0)||0;
+    const ctt=parseFloat(row.ctt||row.CTT||0)||0;
+    const total=parseFloat(row.total??(cex+ctt))||0;
+    if(total<=0) return;
+    let desc='Cobros transportistas';
+    if(cex&&ctt) desc=`Cobros CEX ${Math.round(cex)}€ + CTT ${Math.round(ctt)}€`;
+    else if(cex) desc='Cobro CEX';
+    else if(ctt) desc='Cobro CTT';
+    forecasts.push({
+      date, desc, benef:'CEX/CTT', cat:'ingresos',
+      amount:Math.abs(total), type:'prev', source:'cobros',
+      id:'cob_'+date
+    });
+    n++;
+  });
+  const s=addStep(`✓ ${n} días de cobros previstos cargados`,'ok');
+  if(!debugOpen)toggleDebug();
+  saveForecasts();
+}
+
 function addForecast(){
   const date=document.getElementById('nDate').value;
   const desc=document.getElementById('nDesc').value.trim();
   const benef=document.getElementById('nBenef').value.trim()||'—';
   const cat=document.getElementById('nCat').value;
-  const amt=parseFloat(document.getElementById('nAmt').value);
-  if(!date||!desc||isNaN(amt)){alert('Completa fecha, concepto e importe');return;}
+  const type=document.getElementById('nType').value;
+  const raw=parseFloat(document.getElementById('nAmt').value);
+  if(!date||!desc||isNaN(raw)){alert('Completa fecha, concepto e importe');return;}
+  const amt=type==='ingreso'?Math.abs(raw):-Math.abs(raw);
   forecasts.push({date,desc,benef,cat,amount:amt,type:'prev',id:'fc_'+Date.now()});
   document.getElementById('nDesc').value='';document.getElementById('nBenef').value='';document.getElementById('nAmt').value='';
+  saveForecasts();
+  renderAll();
+}
+
+function delForecast(id){
+  forecasts=forecasts.filter(f=>f.id!==id);
+  saveForecasts();
   renderAll();
 }
 
@@ -580,6 +730,13 @@ function exportCSV(){
 
 const nd=new Date(today);nd.setDate(nd.getDate()+7);
 document.getElementById('nDate').value=fmt(nd);
+
+// Cargar previsiones guardadas de sesiones anteriores
+loadForecasts();
+if(forecasts.length){
+  const bal=parseFloat(document.getElementById('manualBal').value)||0;
+  if(bal>0) renderAll();
+}
 
 // Comprobar si el servidor tiene credenciales precargadas en .env
 fetch('/proxy/config',{credentials:'include'}).then(r=>r.json()).then(cfg=>{
