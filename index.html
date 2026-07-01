@@ -143,6 +143,11 @@
       <div class="metric-value amber" id="mMin">—</div>
       <div class="metric-sub" id="mMinSub">punto más bajo del periodo</div>
     </div>
+    <div class="metric m-green">
+      <div class="metric-label">pendiente de cobro</div>
+      <div class="metric-value green" id="mPend">—</div>
+      <div class="metric-sub" id="mPendSub">lo que nos deben CEX/CTT</div>
+    </div>
   </div>
 
   <div id="alertaNegativo" style="display:none;margin:0 0 18px;padding:14px 18px;border-radius:12px;background:rgba(239,68,68,0.14);border:1px solid var(--red);color:var(--red);font-size:13px;font-weight:600"></div>
@@ -628,6 +633,17 @@ function renderAll(){
   // ── Tabla resumen por hitos ───────────────────────────────
   renderProjSummary(bal, allTxs, today2);
 
+  // ── Total pendiente de cobro (del endpoint) ───────────────
+  const mPend=document.getElementById('mPend');
+  const mPendSub=document.getElementById('mPendSub');
+  if(pendienteCobro && pendienteCobro.total>0){
+    mPend.textContent=fmtEur(pendienteCobro.total);
+    mPendSub.textContent=`CEX ${fmtEur(pendienteCobro.cex)} · CTT ${fmtEur(pendienteCobro.ctt)}`;
+  }else{
+    mPend.textContent='—';
+    mPendSub.textContent='pulsa cargar previsión cobros';
+  }
+
   renderCharts(allTxs.filter(t=>t.date<=limit),startBal);
 }
 
@@ -730,8 +746,20 @@ async function loadCobros(silent){
   renderAll();
 }
 
+let pendienteCobro=null;  // {cex,ctt,total} del endpoint, para mostrarlo
+
 function parseCobros(data){
-  const arr=Array.isArray(data)?data:(data.items||data.previsión||data.prevision||[]);
+  // Compatible con dos formatos:
+  //  - viejo: lista [{date,cex,ctt,total}, ...]
+  //  - nuevo: objeto {cobros:[...], pendiente:{cex,ctt,total}}
+  let arr;
+  if(Array.isArray(data)){
+    arr=data; pendienteCobro=null;
+  }else if(data && Array.isArray(data.cobros)){
+    arr=data.cobros; pendienteCobro=data.pendiente||null;
+  }else{
+    arr=data.items||data.prevision||[]; pendienteCobro=null;
+  }
   // Quitar cobros previamente cargados para no duplicar
   forecasts=forecasts.filter(f=>f.source!=='cobros');
   const today2=fmt(today);
