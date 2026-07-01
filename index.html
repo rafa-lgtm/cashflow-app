@@ -195,7 +195,8 @@
         <option value="ingreso">Ingreso (+)</option>
       </select>
       <input type="number" id="nAmt" placeholder="importe € (positivo)" min="0" step="0.01" style="width:160px">
-      <button class="btn green" onclick="addForecast()">+ añadir previsión</button>
+      <button class="btn green" id="btnAddForecast" onclick="addForecast()">+ añadir previsión</button>
+      <button class="btn ghost" id="btnCancelEdit" onclick="cancelEdit()" style="display:none">cancelar</button>
     </div>
   </div>
 
@@ -554,7 +555,7 @@ function renderAll(){
       <td>${catPill(t.cat)}</td>
       <td style="text-align:right" class="${ac}">${as}</td>
       <td style="text-align:right" class="tbal">${fmtEur(b)}</td>
-      <td><span class="tag ${t.type==='real'?'tag-real':'tag-prev'}">${t.type==='real'?'real':'prev'}</span>${t.type==='prev'?` <span onclick="delForecast('${t.id}')" title="borrar" style="cursor:pointer;color:var(--muted);margin-left:4px">✕</span>`:''}</td>`;
+      <td><span class="tag ${t.type==='real'?'tag-real':'tag-prev'}">${t.type==='real'?'real':'prev'}</span>${t.type==='prev'?` <span onclick="editForecast('${t.id}')" title="editar" style="cursor:pointer;color:var(--muted);margin-left:6px">✎</span> <span onclick="delForecast('${t.id}')" title="borrar" style="cursor:pointer;color:var(--muted);margin-left:2px">✕</span>`:''}</td>`;
     // El saldo se acumula en orden cronológico, pero mostramos el más
     // reciente arriba: prepend en vez de append.
     tbody.prepend(tr);
@@ -737,6 +738,8 @@ function parseCobros(data){
   saveForecasts();
 }
 
+let editandoId=null;
+
 function addForecast(){
   const date=document.getElementById('nDate').value;
   const desc=document.getElementById('nDesc').value.trim();
@@ -746,13 +749,50 @@ function addForecast(){
   const raw=parseFloat(document.getElementById('nAmt').value);
   if(!date||!desc||isNaN(raw)){alert('Completa fecha, concepto e importe');return;}
   const amt=type==='ingreso'?Math.abs(raw):-Math.abs(raw);
-  forecasts.push({date,desc,benef,cat,amount:amt,type:'prev',id:'fc_'+Date.now()});
+
+  if(editandoId){
+    // Actualizar la previsión existente en vez de crear una nueva.
+    const f=forecasts.find(x=>x.id===editandoId);
+    if(f){ f.date=date; f.desc=desc; f.benef=benef; f.cat=cat; f.amount=amt;
+           if(f.source==='cobros') delete f.source; }  // deja de ser auto-cobro
+    cancelEdit();
+  }else{
+    forecasts.push({date,desc,benef,cat,amount:amt,type:'prev',id:'fc_'+Date.now()});
+  }
   document.getElementById('nDesc').value='';document.getElementById('nBenef').value='';document.getElementById('nAmt').value='';
   saveForecasts();
   renderAll();
 }
 
+function editForecast(id){
+  const f=forecasts.find(x=>x.id===id);
+  if(!f) return;
+  editandoId=id;
+  document.getElementById('nDate').value=f.date;
+  document.getElementById('nDesc').value=f.desc;
+  document.getElementById('nBenef').value=(f.benef==='—'?'':f.benef)||'';
+  document.getElementById('nCat').value=f.cat;
+  document.getElementById('nType').value=f.amount>=0?'ingreso':'gasto';
+  document.getElementById('nAmt').value=Math.abs(f.amount);
+  const btn=document.getElementById('btnAddForecast');
+  if(btn) btn.textContent='✓ guardar cambios';
+  const c=document.getElementById('btnCancelEdit');
+  if(c) c.style.display='inline-block';
+  // Llevar el foco al formulario de arriba
+  document.getElementById('nDesc').focus();
+}
+
+function cancelEdit(){
+  editandoId=null;
+  const btn=document.getElementById('btnAddForecast');
+  if(btn) btn.textContent='+ añadir previsión';
+  const c=document.getElementById('btnCancelEdit');
+  if(c) c.style.display='none';
+  document.getElementById('nDesc').value='';document.getElementById('nBenef').value='';document.getElementById('nAmt').value='';
+}
+
 function delForecast(id){
+  if(editandoId===id) cancelEdit();
   forecasts=forecasts.filter(f=>f.id!==id);
   saveForecasts();
   renderAll();
