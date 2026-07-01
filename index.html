@@ -412,6 +412,8 @@ async function connectAirwallex(){
 
     setStatus('conectado','green');
   renderAll();
+  // Recargar automáticamente la previsión de cobros (silenciosa).
+  loadCobros(true);
 }
 
 function parseBalance(data, ep){
@@ -681,7 +683,7 @@ function renderCharts(allTxs,startBal){
 // BD de pedidos. Si falla, permite pegar el JSON manualmente como fallback.
 // Formato esperado: [{"date":"2026-06-17","cex":6000,"ctt":3897}, ...]
 const COD_DASHBOARD_URL='https://web-production-cc26d.up.railway.app';
-async function loadCobros(){
+async function loadCobros(silent){
   let data=null;
   const H=parseInt(document.getElementById('horizon').value)||30;
   try{
@@ -690,6 +692,7 @@ async function loadCobros(){
   }catch(e){}
 
   if(!data){
+    if(silent) return;  // en carga automática no molestamos con el prompt
     const pasted=prompt('No se pudo leer la previsión del cod-dashboard.\nPega aquí el JSON manualmente (formato: [{"date":"2026-06-17","cex":6000,"ctt":3897}, ...] ):');
     if(!pasted) return;
     try{ data=JSON.parse(pasted); }
@@ -703,10 +706,15 @@ function parseCobros(data){
   const arr=Array.isArray(data)?data:(data.items||data.previsión||data.prevision||[]);
   // Quitar cobros previamente cargados para no duplicar
   forecasts=forecasts.filter(f=>f.source!=='cobros');
-  let n=0;
+  const today2=fmt(today);
+  let n=0, saltados=0;
   arr.forEach(row=>{
     const date=(row.date||row.fecha||'').slice(0,10);
     if(!date) return;
+    // ANTI-SOLAPE: no cargar previsión de hoy ni de días pasados.
+    // El cobro de esos días ya lo refleja (o lo reflejará) Airwallex como
+    // movimiento REAL; contarlo también como previsión lo duplicaría.
+    if(date<=today2){ saltados++; return; }
     const cex=parseFloat(row.cex||row.CEX||0)||0;
     const ctt=parseFloat(row.ctt||row.CTT||0)||0;
     const total=parseFloat(row.total??(cex+ctt))||0;
@@ -722,7 +730,9 @@ function parseCobros(data){
     });
     n++;
   });
-  const s=addStep(`✓ ${n} días de cobros previstos cargados`,'ok');
+  let msg=`✓ ${n} días de cobros previstos cargados`;
+  if(saltados>0) msg+=` (${saltados} de hoy/pasados omitidos: ya los cubre Airwallex)`;
+  addStep(msg,'ok');
   if(!debugOpen)toggleDebug();
   saveForecasts();
 }
@@ -771,6 +781,10 @@ if(forecasts.length){
   const bal=parseFloat(document.getElementById('manualBal').value)||0;
   if(bal>0) renderAll();
 }
+
+// Cargar la previsión de cobros al abrir (silenciosa). Se refresca con datos
+// del día, y el anti-solape evita duplicar lo que ya cobró Airwallex.
+loadCobros(true);
 
 // Comprobar si el servidor tiene credenciales precargadas en .env
 fetch('/proxy/config',{credentials:'include'}).then(r=>r.json()).then(cfg=>{
