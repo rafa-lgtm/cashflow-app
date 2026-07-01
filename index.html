@@ -524,7 +524,16 @@ function renderAll(){
   const bal=liveBal||parseFloat(document.getElementById('manualBal').value)||0;
   if(!bal){return;}
 
-  const allTxs=[...txs,...forecasts].sort((a,b)=>a.date.localeCompare(b.date));
+  // Orden: por fecha y, dentro del mismo día, ingresos (+) antes que gastos (-),
+  // para que el saldo no baje a negativo por el orden de las filas cuando ese
+  // día entra dinero suficiente.
+  const ordena=(a,b)=>{
+    const d=a.date.localeCompare(b.date);
+    if(d!==0) return d;
+    const sa=a.amount>=0?0:1, sb=b.amount>=0?0:1;
+    return sa-sb;
+  };
+  const allTxs=[...txs,...forecasts].sort(ordena);
   const startBal=bal-txs.reduce((s,t)=>s+t.amount,0);
 
   let b=startBal;
@@ -550,7 +559,7 @@ function renderAll(){
     const tr=document.createElement('tr');
     const ac=t.amount>=0?'tgreen':'tred';
     const as=(t.amount>=0?'+':'')+fmtEur(t.amount);
-    const negativo=b<0;
+    const negativo=b<0 && t.date>=today2;  // solo futuro/hoy, no lo pasado
     if(negativo) tr.style.background='rgba(239,68,68,0.12)';
     const balStyle=negativo?'text-align:right;color:var(--red);font-weight:700':'text-align:right';
     tr.innerHTML=`
@@ -588,7 +597,7 @@ function renderAll(){
   // Recorrer día a día desde hoy hasta el horizonte, acumulando saldo
   // partiendo del saldo REAL de hoy (bal), sumando solo movimientos futuros.
   const future=allTxs.filter(t=>t.date>today2 && t.date<=limit)
-                     .sort((a,b)=>a.date.localeCompare(b.date));
+                     .sort(ordena);
   let run=bal, minBal=bal, minDate=today2, primerNeg=null;
   future.forEach(t=>{
     run+=t.amount;
