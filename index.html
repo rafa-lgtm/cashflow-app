@@ -677,19 +677,20 @@ function renderCharts(allTxs,startBal){
 }
 
 // ── Cargar previsión de cobros CEX/CTT ────────────────────────
-// Intenta leer del backend (/proxy/cobros). Si no existe todavía,
-// permite pegar el JSON generado con el modelo Cobros_Transportistas.
+// Llama al endpoint del cod-dashboard, que calcula la previsión desde la
+// BD de pedidos. Si falla, permite pegar el JSON manualmente como fallback.
 // Formato esperado: [{"date":"2026-06-17","cex":6000,"ctt":3897}, ...]
-//              o bien: [{"date":"2026-06-17","total":9897}, ...]
+const COD_DASHBOARD_URL='https://web-production-cc26d.up.railway.app';
 async function loadCobros(){
   let data=null;
+  const H=parseInt(document.getElementById('horizon').value)||30;
   try{
-    const r=await fetch('/proxy/cobros',{credentials:'include'});
+    const r=await fetch(COD_DASHBOARD_URL+'/api/prevision-cobros?dias='+H,{credentials:'include'});
     if(r.ok) data=await r.json();
   }catch(e){}
 
   if(!data){
-    const pasted=prompt('No hay endpoint de cobros en el backend todavía.\nPega aquí el JSON de la previsión (formato: [{"date":"2026-06-17","cex":6000,"ctt":3897}, ...] ):');
+    const pasted=prompt('No se pudo leer la previsión del cod-dashboard.\nPega aquí el JSON manualmente (formato: [{"date":"2026-06-17","cex":6000,"ctt":3897}, ...] ):');
     if(!pasted) return;
     try{ data=JSON.parse(pasted); }
     catch(e){ alert('JSON no válido: '+e.message); return; }
