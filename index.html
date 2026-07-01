@@ -553,7 +553,9 @@ function renderAll(){
       <td style="text-align:right" class="${ac}">${as}</td>
       <td style="text-align:right" class="tbal">${fmtEur(b)}</td>
       <td><span class="tag ${t.type==='real'?'tag-real':'tag-prev'}">${t.type==='real'?'real':'prev'}</span>${t.type==='prev'?` <span onclick="delForecast('${t.id}')" title="borrar" style="cursor:pointer;color:var(--muted);margin-left:4px">✕</span>`:''}</td>`;
-    tbody.appendChild(tr);
+    // El saldo se acumula en orden cronológico, pero mostramos el más
+    // reciente arriba: prepend en vez de append.
+    tbody.prepend(tr);
   });
   const hint=document.getElementById('txHidden');
   if(hidden>0){
