@@ -145,6 +145,8 @@
     </div>
   </div>
 
+  <div id="alertaNegativo" style="display:none;margin:0 0 18px;padding:14px 18px;border-radius:12px;background:rgba(239,68,68,0.14);border:1px solid var(--red);color:var(--red);font-size:13px;font-weight:600"></div>
+
   <div class="grid2">
     <div class="panel">
       <div class="panel-title"><span>salidas reales por día</span><span class="tag tag-real">real</span></div>
@@ -548,13 +550,16 @@ function renderAll(){
     const tr=document.createElement('tr');
     const ac=t.amount>=0?'tgreen':'tred';
     const as=(t.amount>=0?'+':'')+fmtEur(t.amount);
+    const negativo=b<0;
+    if(negativo) tr.style.background='rgba(239,68,68,0.12)';
+    const balStyle=negativo?'text-align:right;color:var(--red);font-weight:700':'text-align:right';
     tr.innerHTML=`
-      <td class="mono">${t.date}</td>
+      <td class="mono">${negativo?'⚠ ':''}${t.date}</td>
       <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.desc}</td>
       <td class="mono" style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px">${t.benef||'—'}</td>
       <td>${catPill(t.cat)}</td>
       <td style="text-align:right" class="${ac}">${as}</td>
-      <td style="text-align:right" class="tbal">${fmtEur(b)}</td>
+      <td style="${balStyle}" class="tbal">${fmtEur(b)}</td>
       <td><span class="tag ${t.type==='real'?'tag-real':'tag-prev'}">${t.type==='real'?'real':'prev'}</span>${t.type==='prev'?` <span onclick="editForecast('${t.id}')" title="editar" style="cursor:pointer;color:var(--muted);margin-left:6px">✎</span> <span onclick="delForecast('${t.id}')" title="borrar" style="cursor:pointer;color:var(--muted);margin-left:2px">✕</span>`:''}</td>`;
     // El saldo se acumula en orden cronológico, pero mostramos el más
     // reciente arriba: prepend en vez de append.
@@ -584,10 +589,11 @@ function renderAll(){
   // partiendo del saldo REAL de hoy (bal), sumando solo movimientos futuros.
   const future=allTxs.filter(t=>t.date>today2 && t.date<=limit)
                      .sort((a,b)=>a.date.localeCompare(b.date));
-  let run=bal, minBal=bal, minDate=today2;
+  let run=bal, minBal=bal, minDate=today2, primerNeg=null;
   future.forEach(t=>{
     run+=t.amount;
     if(run<minBal){minBal=run;minDate=t.date;}
+    if(primerNeg===null && run<0){primerNeg=t.date;}
   });
   const endBal=run;
 
@@ -596,8 +602,19 @@ function renderAll(){
   document.getElementById('mFcSub').textContent='al '+limit;
 
   document.getElementById('mMin').textContent=fmtEur(minBal);
-  document.getElementById('mMin').className='metric-value '+(minBal>0?'amber':'red');
-  document.getElementById('mMinSub').textContent=minBal<minBalRef?('⚠ bajo colchón · '+minDate):('el '+minDate);
+  document.getElementById('mMin').className='metric-value '+(minBal>=0?'amber':'red');
+  document.getElementById('mMinSub').textContent=minBal<0?('⚠ negativo · '+minDate):('el '+minDate);
+
+  // ── Alerta de saldo negativo ──────────────────────────────
+  const alerta=document.getElementById('alertaNegativo');
+  if(primerNeg && bal>0){
+    alerta.style.display='block';
+    alerta.innerHTML=`⚠ ATENCIÓN: el saldo proyectado se queda en NEGATIVO a partir del ${primerNeg}. `
+      +`Punto más bajo: ${fmtEur(minBal)} el ${minDate}. `
+      +`Revisa las previsiones de gasto de esos días (edítalas o reprográmalas) o asegúrate de tener entradas suficientes antes.`;
+  }else{
+    alerta.style.display='none';
+  }
 
   // ── Tabla resumen por hitos ───────────────────────────────
   renderProjSummary(bal, allTxs, today2);
@@ -621,12 +638,13 @@ function renderProjSummary(bal, allTxs, today2){
     const proj=bal+inSum+outSum;
     if(period.length)any=true;
     const tr=document.createElement('tr');
+    if(proj<0) tr.style.background='rgba(239,68,68,0.10)';
     tr.innerHTML=`
-      <td class="mono">+${h}d</td>
+      <td class="mono">${proj<0?'⚠ ':''}+${h}d</td>
       <td class="mono">${lim}</td>
       <td style="text-align:right" class="tgreen">${inSum>0?'+'+fmtEur(inSum):'—'}</td>
       <td style="text-align:right" class="tred">${outSum<0?fmtEur(outSum):'—'}</td>
-      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;color:${proj>0?'var(--green)':'var(--red)'}">${fmtEur(proj)}</td>`;
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:${proj<0?'700':'400'};color:${proj>=0?'var(--green)':'var(--red)'}">${fmtEur(proj)}</td>`;
     tb.appendChild(tr);
   });
   panel.style.display=any?'block':'none';
