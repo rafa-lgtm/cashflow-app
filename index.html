@@ -425,24 +425,31 @@ async function connectAirwallex(){
 }
 
 function parseBalance(data, ep){
-  let b=null;
-  const tryGet=obj=>parseFloat(obj?.available_amount??obj?.total_amount??obj?.amount??obj?.balance??obj?.availableBalance??'NaN');
+  let b=null, avail=null, reserved=null;
+  // Para liquidez usamos el TOTAL (disponible + reservado), que cuadra con
+  // lo que muestra Airwallex. El disponible se guarda para el sub-texto.
+  const getTotal=obj=>parseFloat(obj?.total_amount??obj?.available_amount??obj?.amount??obj?.balance??obj?.availableBalance??'NaN');
+  const getAvail=obj=>parseFloat(obj?.available_amount??'NaN');
+  const getResv=obj=>parseFloat(obj?.reserved_amount??'NaN');
+  let eur=null;
   if(Array.isArray(data)){
-    const eur=data.find(x=>(x.currency||x.currency_code)==='EUR')||data[0];
-    b=tryGet(eur);
+    eur=data.find(x=>(x.currency||x.currency_code)==='EUR')||data[0];
   } else if(data.balances){
-    const eur=data.balances.find(x=>(x.currency||x.currency_code)==='EUR')||data.balances[0];
-    b=tryGet(eur);
+    eur=data.balances.find(x=>(x.currency||x.currency_code)==='EUR')||data.balances[0];
   } else if(data.items){
-    const eur=data.items.find(x=>(x.currency||x.currency_code)==='EUR')||data.items[0];
-    b=tryGet(eur);
+    eur=data.items.find(x=>(x.currency||x.currency_code)==='EUR')||data.items[0];
   } else {
-    b=tryGet(data);
+    eur=data;
   }
+  b=getTotal(eur); avail=getAvail(eur); reserved=getResv(eur);
   if(b&&!isNaN(b)&&b>0){
     liveBal=b;
     document.getElementById('mBal').textContent=fmtEur(b);
-    document.getElementById('mBalSub').textContent='— airwallex live';
+    let sub='— airwallex live';
+    if(!isNaN(reserved)&&reserved>0){
+      sub=`— airwallex · ${fmtEur(avail)} disp. + ${fmtEur(reserved)} reservado`;
+    }
+    document.getElementById('mBalSub').textContent=sub;
     document.getElementById('manualBal').value=Math.round(b);
   }
 }
