@@ -260,6 +260,7 @@ const CAT_COLORS={
   impuestos:['rgba(255,68,85,.15)','#ff4455'],
   otros:['rgba(120,120,120,.15)','#888'],
   divisa:['rgba(0,180,216,.15)','#00b4d8'],
+  estimado:['rgba(120,200,160,.13)','#7ac8a0'],
   ingresos:['rgba(0,208,132,.15)','#00d084'],
 };
 
@@ -593,7 +594,11 @@ function renderAll(){
     const as=(t.amount>=0?'+':'')+fmtEur(t.amount);
     const negativo=b<0 && t.date>=today2;  // solo futuro/hoy, no lo pasado
     if(negativo) tr.style.background='rgba(239,68,68,0.12)';
+    const esEstimado=t.source==='cobros_est';
+    if(esEstimado){ tr.style.opacity='0.72'; tr.style.fontStyle='italic'; }
     const balStyle=negativo?'text-align:right;color:var(--red);font-weight:700':'text-align:right';
+    const tipoTag=t.type==='real'?'<span class="tag tag-real">real</span>'
+      :(esEstimado?'<span class="tag tag-prev" style="opacity:.8">est.</span>':'<span class="tag tag-prev">prev</span>');
     tr.innerHTML=`
       <td class="mono">${negativo?'⚠ ':''}${t.date}</td>
       <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.desc}</td>
@@ -601,7 +606,7 @@ function renderAll(){
       <td>${catPill(t.cat)}</td>
       <td style="text-align:right" class="${ac}">${as}</td>
       <td style="${balStyle}" class="tbal">${fmtEur(b)}</td>
-      <td><span class="tag ${t.type==='real'?'tag-real':'tag-prev'}">${t.type==='real'?'real':'prev'}</span>${t.type==='prev'?` <span onclick="editForecast('${t.id}')" title="editar" style="cursor:pointer;color:var(--muted);margin-left:6px">✎</span> <span onclick="delForecast('${t.id}')" title="borrar" style="cursor:pointer;color:var(--muted);margin-left:2px">✕</span>`:''}</td>`;
+      <td>${tipoTag}${t.type==='prev'?` <span onclick="editForecast('${t.id}')" title="editar" style="cursor:pointer;color:var(--muted);margin-left:6px">✎</span> <span onclick="delForecast('${t.id}')" title="borrar" style="cursor:pointer;color:var(--muted);margin-left:2px">✕</span>`:''}</td>`;
     // El saldo se acumula en orden cronológico, pero mostramos el más
     // reciente arriba: prepend en vez de append.
     tbody.prepend(tr);
@@ -788,33 +793,52 @@ function parseCobros(data){
     arr=data.items||data.prevision||[]; pendienteCobro=null;
   }
   // Quitar cobros previamente cargados para no duplicar
-  forecasts=forecasts.filter(f=>f.source!=='cobros');
+  forecasts=forecasts.filter(f=>f.source!=='cobros' && f.source!=='cobros_est');
   const today2=fmt(today);
   let n=0, saltados=0;
   arr.forEach(row=>{
     const date=(row.date||row.fecha||'').slice(0,10);
     if(!date) return;
     // ANTI-SOLAPE: no cargar previsión de hoy ni de días pasados.
-    // El cobro de esos días ya lo refleja (o lo reflejará) Airwallex como
-    // movimiento REAL; contarlo también como previsión lo duplicaría.
     if(date<=today2){ saltados++; return; }
+
+    // Cobros CONFIRMADOS (ventas ya hechas).
     const cex=parseFloat(row.cex||row.CEX||0)||0;
     const ctt=parseFloat(row.ctt||row.CTT||0)||0;
-    const total=parseFloat(row.total??(cex+ctt))||0;
-    if(total<=0) return;
-    let desc='Cobros transportistas';
-    if(cex&&ctt) desc=`Cobros CEX ${Math.round(cex)}€ + CTT ${Math.round(ctt)}€`;
-    else if(cex) desc='Cobro CEX';
-    else if(ctt) desc='Cobro CTT';
-    forecasts.push({
-      date, desc, benef:'CEX/CTT', cat:'ingresos',
-      amount:Math.abs(total), type:'prev', source:'cobros',
-      id:'cob_'+date
-    });
-    n++;
+    // Compat: si viene total_confirmado úsalo; si no, cex+ctt; si es formato
+    // viejo sin _est, el total es todo confirmado.
+    let conf=parseFloat(row.total_confirmado);
+    if(isNaN(conf)) conf=cex+ctt;
+    if(conf>0){
+      let desc='Cobros transportistas (ventas hechas)';
+      if(cex&&ctt) desc=`Cobros CEX ${Math.round(cex)}€ + CTT ${Math.round(ctt)}€`;
+      else if(cex) desc='Cobro CEX';
+      else if(ctt) desc='Cobro CTT';
+      forecasts.push({
+        date, desc, benef:'CEX/CTT', cat:'ingresos',
+        amount:Math.abs(conf), type:'prev', source:'cobros',
+        id:'cob_'+date
+      });
+      n++;
+    }
+
+    // Cobros ESTIMADOS (ventas futuras al ritmo actual).
+    const cexE=parseFloat(row.cex_est||0)||0;
+    const cttE=parseFloat(row.ctt_est||0)||0;
+    let est=parseFloat(row.total_estimado);
+    if(isNaN(est)) est=cexE+cttE;
+    if(est>0){
+      forecasts.push({
+        date, desc:`Cobros estimados (ventas futuras) CEX ${Math.round(cexE)}€ + CTT ${Math.round(cttE)}€`,
+        benef:'CEX/CTT est.', cat:'estimado',
+        amount:Math.abs(est), type:'prev', source:'cobros_est',
+        id:'cobest_'+date
+      });
+    }
   });
   let msg=`✓ ${n} días de cobros previstos cargados`;
   if(saltados>0) msg+=` (${saltados} de hoy/pasados omitidos: ya los cubre Airwallex)`;
+  if(data.ritmo_ventas) msg+=` · ritmo ventas ${fmtEur(data.ritmo_ventas.total_dia)}/día`;
   addStep(msg,'ok');
   if(!debugOpen)toggleDebug();
   saveForecasts();
