@@ -259,6 +259,7 @@ const CAT_COLORS={
   nominas:['rgba(255,100,100,.15)','#ff6464'],
   impuestos:['rgba(255,68,85,.15)','#ff4455'],
   otros:['rgba(120,120,120,.15)','#888'],
+  divisa:['rgba(0,180,216,.15)','#00b4d8'],
   ingresos:['rgba(0,208,132,.15)','#00d084'],
 };
 
@@ -507,11 +508,16 @@ function parseFinancialTx(items){
       };
       desc = map[ttype] || map[stype] || ttype || stype || 'Movimiento';
     }
+    // Las conversiones solo muestran su pata EUR (la otra divisa se filtra).
+    // Etiqueta clara para que no confunda ver un +EUR o -EUR "suelto".
+    if(/conversion|fx/i.test((stype||'')+(ttype||''))){
+      desc = (amt>=0?'Cambio divisa → +EUR':'Cambio divisa → −EUR')+(t.description?' ('+t.description+')':'');
+    }
     return{
       date:(t.settled_at||t.created_at||'').slice(0,10),
       desc:desc,
       benef:'—',
-      cat:guessCategoryByType(stype, ttype, desc),
+      cat:guessCategoryByType(stype, ttype, desc, amt),
       amount:amt,
       currency:t.currency||'EUR',
       type:'real',
@@ -520,15 +526,29 @@ function parseFinancialTx(items){
     };
   }).filter(t=>t.date && !isNaN(t.amount) && t.amount!==0);
   txs=[...txs.filter(t=>t.source!=='fintx'),...parsed];
+
+  // ── Verificación de saldo (visible en debug) ──────────────
+  // El saldo actual (liveBal) es el punto de partida real de Airwallex.
+  // Mostramos el desglose de movimientos EUR para poder cotejarlo a mano.
+  const inSum=parsed.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
+  const outSum=parsed.filter(t=>t.amount<0).reduce((s,t)=>s+t.amount,0);
+  const fx=parsed.filter(t=>t.cat==='divisa');
+  const fxNeto=fx.reduce((s,t)=>s+t.amount,0);
+  addStep(`✓ Movimientos EUR: ${parsed.length} · entradas ${fmtEur(inSum)} · salidas ${fmtEur(outSum)} · neto ${fmtEur(inSum+outSum)}`,'ok');
+  if(fx.length) addStep(`  · de los cuales ${fx.length} cambios de divisa (neto EUR ${fmtEur(fxNeto)})`,'ok');
+  if(liveBal) addStep(`  · saldo actual Airwallex (total): ${fmtEur(liveBal)}`,'ok');
 }
 
-function guessCategoryByType(stype, ttype, desc){
+function guessCategoryByType(stype, ttype, desc, amount){
   const s=((stype||'')+(ttype||'')+(desc||'')).toLowerCase();
+  // El signo manda: un importe negativo es SIEMPRE una salida, aunque el
+  // texto diga "deposit" (p.ej. "deposit to account X" = dinero que sale).
+  const esSalida = (typeof amount==='number' && amount<0);
+  if(/conversion|fx/.test(s)) return 'divisa';
   if(/card|issuing|purchase/.test(s)) return 'otros';
   if(/payout|transfer/.test(s)) return 'proveedores';
-  if(/deposit|refund/.test(s)) return 'ingresos';
-  if(/conversion|fx/.test(s)) return 'otros';
   if(/fee|comision/.test(s)) return 'otros';
+  if(/deposit|refund/.test(s)) return esSalida ? 'otros' : 'ingresos';
   return guessCategory(desc||'', s);
 }
 
