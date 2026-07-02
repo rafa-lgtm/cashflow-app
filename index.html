@@ -235,6 +235,12 @@
 <script>
 const today=new Date();
 function fmt(d){return new Date(d).toISOString().split('T')[0]}
+function diaSemana(iso){
+  // iso 'YYYY-MM-DD' -> 'lun','mar',... (mediodía para evitar saltos de zona)
+  const dias=['dom','lun','mar','mié','jue','vie','sáb'];
+  const d=new Date(iso+'T12:00:00');
+  return dias[d.getDay()];
+}
 function dAhead(n){const d=new Date(today);d.setDate(d.getDate()+n);return fmt(d)}
 
 let debugOpen=false,rawLog={},liveBal=null,txs=[],forecasts=[];
@@ -574,6 +580,11 @@ function renderAll(){
   const tbody=document.getElementById('txTable');
   tbody.innerHTML='';
 
+  // Fecha del último movimiento REAL (el "hoy" operativo), para marcarlo.
+  const reales=txs.filter(t=>t.date<=today2).map(t=>t.date).sort();
+  const ultimoRealDate=reales.length?reales[reales.length-1]:today2;
+  let marcadoHoy=false;
+
   // Rango de días hacia atrás para mostrar movimientos (el cálculo de
   // saldo usa TODOS; el filtro solo afecta a qué filas se pintan).
   const rangeVal=document.getElementById('txRange')?document.getElementById('txRange').value:'30';
@@ -596,11 +607,20 @@ function renderAll(){
     if(negativo) tr.style.background='rgba(239,68,68,0.12)';
     const esEstimado=t.source==='cobros_est';
     if(esEstimado){ tr.style.opacity='0.72'; tr.style.fontStyle='italic'; }
+    // Marcar la fila del último movimiento real (el "hoy" operativo).
+    const esHoy = (!marcadoHoy && t.type==='real' && t.date===ultimoRealDate);
+    if(esHoy){
+      marcadoHoy=true;
+      if(!negativo) tr.style.background='rgba(0,208,132,0.10)';
+      tr.style.borderTop='2px solid var(--green)';
+      tr.style.borderBottom='2px solid var(--green)';
+    }
     const balStyle=negativo?'text-align:right;color:var(--red);font-weight:700':'text-align:right';
     const tipoTag=t.type==='real'?'<span class="tag tag-real">real</span>'
       :(esEstimado?'<span class="tag tag-prev" style="opacity:.8">est.</span>':'<span class="tag tag-prev">prev</span>');
+    const diaSem=diaSemana(t.date);
     tr.innerHTML=`
-      <td class="mono">${negativo?'⚠ ':''}${t.date}</td>
+      <td class="mono">${negativo?'⚠ ':''}${esHoy?'▶ ':''}<span style="color:var(--muted);font-size:10px">${diaSem}</span> ${t.date}${esHoy?' <span style="color:var(--green);font-size:9px">· HOY</span>':''}</td>
       <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.desc}</td>
       <td class="mono" style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px">${t.benef||'—'}</td>
       <td>${catPill(t.cat)}</td>
