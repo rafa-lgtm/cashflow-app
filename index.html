@@ -202,6 +202,9 @@
         <option value="ingreso">Ingreso (+)</option>
       </select>
       <input type="number" id="nAmt" placeholder="importe € (positivo)" min="0" step="0.01" style="width:160px">
+      <label style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);cursor:pointer" title="Si lo marcas, esta previsión se borrará sola cuando llegue su fecha (porque ya lo cobrarás por Airwallex)">
+        <input type="checkbox" id="nEsCobro" style="cursor:pointer"> es cobro transportista
+      </label>
       <button class="btn green" id="btnAddForecast" onclick="addForecast()">+ añadir previsión</button>
       <button class="btn ghost" id="btnCancelEdit" onclick="cancelEdit()" style="display:none">cancelar</button>
     </div>
@@ -570,8 +573,8 @@ function renderAll(){
   const hoyStr=fmt(today);
   const antes=forecasts.length;
   forecasts=forecasts.filter(f=>{
-    const esCobro=(f.source==='cobros'||f.source==='cobros_est');
-    if(esCobro && f.date<=hoyStr) return false;  // vencido -> fuera
+    const esCobro=(f.source==='cobros'||f.source==='cobros_est'||f.esCobroManual===true);
+    if(esCobro && f.date<=hoyStr) return false;  // cobro vencido -> fuera
     return true;
   });
   if(forecasts.length!==antes) saveForecasts();
@@ -889,6 +892,7 @@ function addForecast(){
   const cat=document.getElementById('nCat').value;
   const type=document.getElementById('nType').value;
   const raw=parseFloat(document.getElementById('nAmt').value);
+  const esCobro=document.getElementById('nEsCobro').checked;
   if(!date||!desc||isNaN(raw)){alert('Completa fecha, concepto e importe');return;}
   const amt=type==='ingreso'?Math.abs(raw):-Math.abs(raw);
 
@@ -896,12 +900,15 @@ function addForecast(){
     // Actualizar la previsión existente en vez de crear una nueva.
     const f=forecasts.find(x=>x.id===editandoId);
     if(f){ f.date=date; f.desc=desc; f.benef=benef; f.cat=cat; f.amount=amt;
-           if(f.source==='cobros') delete f.source; }  // deja de ser auto-cobro
+           f.esCobroManual=esCobro;
+           if(f.source==='cobros'||f.source==='cobros_est') delete f.source; }
     cancelEdit();
   }else{
-    forecasts.push({date,desc,benef,cat,amount:amt,type:'prev',id:'fc_'+Date.now()});
+    forecasts.push({date,desc,benef,cat,amount:amt,type:'prev',
+                    esCobroManual:esCobro, id:'fc_'+Date.now()});
   }
   document.getElementById('nDesc').value='';document.getElementById('nBenef').value='';document.getElementById('nAmt').value='';
+  document.getElementById('nEsCobro').checked=false;
   saveForecasts();
   renderAll();
 }
@@ -916,6 +923,7 @@ function editForecast(id){
   document.getElementById('nCat').value=f.cat;
   document.getElementById('nType').value=f.amount>=0?'ingreso':'gasto';
   document.getElementById('nAmt').value=Math.abs(f.amount);
+  document.getElementById('nEsCobro').checked=!!f.esCobroManual;
   const btn=document.getElementById('btnAddForecast');
   if(btn) btn.textContent='✓ guardar cambios';
   const c=document.getElementById('btnCancelEdit');
@@ -931,6 +939,7 @@ function cancelEdit(){
   const c=document.getElementById('btnCancelEdit');
   if(c) c.style.display='none';
   document.getElementById('nDesc').value='';document.getElementById('nBenef').value='';document.getElementById('nAmt').value='';
+  document.getElementById('nEsCobro').checked=false;
 }
 
 function delForecast(id){
