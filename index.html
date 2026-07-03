@@ -563,6 +563,19 @@ function renderAll(){
   const bal=liveBal||parseFloat(document.getElementById('manualBal').value)||0;
   if(!bal){return;}
 
+  // Limpiar previsiones de COBROS vencidas (fecha <= hoy): esos cobros ya los
+  // refleja Airwallex como movimiento real, así que la previsión se elimina
+  // sola para no duplicar. Solo afecta a cobros (source cobros/cobros_est);
+  // las previsiones de gasto manuales no se tocan.
+  const hoyStr=fmt(today);
+  const antes=forecasts.length;
+  forecasts=forecasts.filter(f=>{
+    const esCobro=(f.source==='cobros'||f.source==='cobros_est');
+    if(esCobro && f.date<=hoyStr) return false;  // vencido -> fuera
+    return true;
+  });
+  if(forecasts.length!==antes) saveForecasts();
+
   // Orden: por fecha y, dentro del mismo día, ingresos (+) antes que gastos (-),
   // para que el saldo no baje a negativo por el orden de las filas cuando ese
   // día entra dinero suficiente.
@@ -580,9 +593,12 @@ function renderAll(){
   const tbody=document.getElementById('txTable');
   tbody.innerHTML='';
 
-  // Fecha del último movimiento REAL (el "hoy" operativo), para marcarlo.
-  const reales=txs.filter(t=>t.date<=today2).map(t=>t.date).sort();
-  const ultimoRealDate=reales.length?reales[reales.length-1]:today2;
+  // Último movimiento REAL del día actual (el "hoy" operativo). Marcamos ese
+  // porque su saldo acumulado es el saldo actual real. allTxs va en orden
+  // cronológico ascendente, así que el último real de esa fecha es el correcto.
+  const today2b=fmt(today);
+  const realesHoy=allTxs.filter(t=>t.type==='real' && t.date<=today2b);
+  const ultimoRealId=realesHoy.length?realesHoy[realesHoy.length-1].id:null;
   let marcadoHoy=false;
 
   // Rango de días hacia atrás para mostrar movimientos (el cálculo de
@@ -607,8 +623,8 @@ function renderAll(){
     if(negativo) tr.style.background='rgba(239,68,68,0.12)';
     const esEstimado=t.source==='cobros_est';
     if(esEstimado){ tr.style.opacity='0.72'; tr.style.fontStyle='italic'; }
-    // Marcar la fila del último movimiento real (el "hoy" operativo).
-    const esHoy = (!marcadoHoy && t.type==='real' && t.date===ultimoRealDate);
+    // Marcar el último movimiento real del día actual (saldo actual real).
+    const esHoy = (!marcadoHoy && t.id===ultimoRealId);
     if(esHoy){
       marcadoHoy=true;
       if(!negativo) tr.style.background='rgba(0,208,132,0.10)';
