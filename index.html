@@ -181,6 +181,29 @@
 
   <div class="table-panel">
     <div class="table-header">
+      <div class="table-header-title">planificador de gastos del mes</div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span id="planTotal" style="font-size:12px;font-family:'IBM Plex Mono',monospace;color:var(--muted)">total: —</span>
+        <button class="btn green" onclick="addPlanRow()">+ añadir fila</button>
+      </div>
+    </div>
+    <table>
+      <thead><tr>
+        <th style="width:22%">concepto</th>
+        <th style="width:14%">categoría</th>
+        <th style="width:14%">beneficiario</th>
+        <th style="width:13%">fecha pago</th>
+        <th style="width:13%;text-align:right">importe €</th>
+        <th style="width:8%;text-align:center">pagado</th>
+        <th style="width:6%"></th>
+      </tr></thead>
+      <tbody id="planTable"></tbody>
+    </table>
+    <div id="planResumen" style="padding:12px 18px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:8px"></div>
+  </div>
+
+  <div class="table-panel">
+    <div class="table-header">
       <div class="table-header-title">añadir previsión de gasto / ingreso</div>
     </div>
     <div class="add-row">
@@ -249,6 +272,7 @@ function dAhead(n){const d=new Date(today);d.setDate(d.getDate()+n);return fmt(d
 let debugOpen=false,rawLog={},liveBal=null,txs=[],forecasts=[];
 
 const LS_KEY='cashflow_forecasts_v1';
+const LS_PLAN='cashflow_plan_v1';
 function saveForecasts(){
   try{ localStorage.setItem(LS_KEY, JSON.stringify(forecasts)); }
   catch(e){ /* localStorage no disponible */ }
@@ -257,6 +281,18 @@ function loadForecasts(){
   try{
     const raw=localStorage.getItem(LS_KEY);
     if(raw){ const arr=JSON.parse(raw); if(Array.isArray(arr)) forecasts=arr; }
+  }catch(e){}
+}
+
+// ── Planificador de gastos del mes ────────────────────────────
+let planGastos=[];  // [{id,desc,cat,benef,date,amount,pagado}]
+function savePlan(){
+  try{ localStorage.setItem(LS_PLAN, JSON.stringify(planGastos)); }catch(e){}
+}
+function loadPlan(){
+  try{
+    const raw=localStorage.getItem(LS_PLAN);
+    if(raw){ const arr=JSON.parse(raw); if(Array.isArray(arr)) planGastos=arr; }
   }catch(e){}
 }
 
@@ -588,7 +624,7 @@ function renderAll(){
     const sa=a.amount>=0?0:1, sb=b.amount>=0?0:1;
     return sa-sb;
   };
-  const allTxs=[...txs,...forecasts].sort(ordena);
+  const allTxs=[...txs,...forecasts,...planToForecasts()].sort(ordena);
   const startBal=bal-txs.reduce((s,t)=>s+t.amount,0);
 
   let b=startBal;
@@ -638,6 +674,10 @@ function renderAll(){
     const tipoTag=t.type==='real'?'<span class="tag tag-real">real</span>'
       :(esEstimado?'<span class="tag tag-prev" style="opacity:.8">est.</span>':'<span class="tag tag-prev">prev</span>');
     const diaSem=diaSemana(t.date);
+    const esPlan=t.source==='plan';
+    const accionesPrev = t.type==='prev' && !esPlan
+      ? ` <span onclick="editForecast('${t.id}')" title="editar" style="cursor:pointer;color:var(--muted);margin-left:6px">✎</span> <span onclick="delForecast('${t.id}')" title="borrar" style="cursor:pointer;color:var(--muted);margin-left:2px">✕</span>`
+      : (esPlan?' <span title="editar en el planificador" style="color:var(--muted);margin-left:6px;font-size:9px">plan</span>':'');
     tr.innerHTML=`
       <td class="mono">${negativo?'⚠ ':''}${esHoy?'▶ ':''}<span style="color:var(--muted);font-size:10px">${diaSem}</span> ${t.date}${esHoy?' <span style="color:var(--green);font-size:9px">· HOY</span>':''}</td>
       <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.desc}</td>
@@ -645,7 +685,7 @@ function renderAll(){
       <td>${catPill(t.cat)}</td>
       <td style="text-align:right" class="${ac}">${as}</td>
       <td style="${balStyle}" class="tbal">${fmtEur(b)}</td>
-      <td>${tipoTag}${t.type==='prev'?` <span onclick="editForecast('${t.id}')" title="editar" style="cursor:pointer;color:var(--muted);margin-left:6px">✎</span> <span onclick="delForecast('${t.id}')" title="borrar" style="cursor:pointer;color:var(--muted);margin-left:2px">✕</span>`:''}</td>`;
+      <td>${tipoTag}${accionesPrev}</td>`;
     // El saldo se acumula en orden cronológico, pero mostramos el más
     // reciente arriba: prepend en vez de append.
     tbody.prepend(tr);
@@ -885,6 +925,101 @@ function parseCobros(data){
 
 let editandoId=null;
 
+// ── Funciones del planificador de gastos ──────────────────────
+const PLAN_CATS=['marketing','logistica','proveedores','freelancers','nominas','impuestos','otros','ingresos'];
+
+function addPlanRow(){
+  planGastos.push({id:'pl_'+Date.now()+'_'+Math.floor(Math.random()*1000),
+    desc:'', cat:'proveedores', benef:'', date:'', amount:0, pagado:false});
+  savePlan();
+  renderPlan();
+}
+
+function updatePlan(id, campo, valor){
+  const r=planGastos.find(x=>x.id===id);
+  if(!r) return;
+  if(campo==='amount') valor=parseFloat(valor)||0;
+  if(campo==='pagado') valor=!!valor;
+  r[campo]=valor;
+  savePlan();
+  renderPlan();
+  renderAll();  // recalcula movimientos/saldo al instante
+}
+
+function delPlanRow(id){
+  planGastos=planGastos.filter(x=>x.id!==id);
+  savePlan();
+  renderPlan();
+  renderAll();
+}
+
+function renderPlan(){
+  const tb=document.getElementById('planTable');
+  if(!tb) return;
+  tb.innerHTML='';
+  planGastos.forEach(r=>{
+    const tr=document.createElement('tr');
+    if(r.pagado) tr.style.opacity='0.5';
+    const opts=PLAN_CATS.map(c=>`<option value="${c}"${c===r.cat?' selected':''}>${c}</option>`).join('');
+    tr.innerHTML=`
+      <td><input type="text" value="${(r.desc||'').replace(/"/g,'&quot;')}" placeholder="concepto"
+           onchange="updatePlan('${r.id}','desc',this.value)"
+           style="width:100%;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:12px;padding:3px 0;outline:none"></td>
+      <td><select onchange="updatePlan('${r.id}','cat',this.value)"
+           style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:11px;color:var(--text)">${opts}</select></td>
+      <td><input type="text" value="${(r.benef||'').replace(/"/g,'&quot;')}" placeholder="—"
+           onchange="updatePlan('${r.id}','benef',this.value)"
+           style="width:100%;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:11px;padding:3px 0;outline:none"></td>
+      <td><input type="date" value="${r.date||''}"
+           onchange="updatePlan('${r.id}','date',this.value)"
+           style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:11px;color:var(--text);width:130px"></td>
+      <td style="text-align:right"><input type="number" value="${r.amount||''}" placeholder="0" min="0" step="0.01"
+           onchange="updatePlan('${r.id}','amount',this.value)"
+           style="width:100px;text-align:right;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--red);font-size:12px;font-family:'IBM Plex Mono',monospace;padding:3px 0;outline:none"></td>
+      <td style="text-align:center"><input type="checkbox" ${r.pagado?'checked':''}
+           onchange="updatePlan('${r.id}','pagado',this.checked)" style="cursor:pointer"
+           title="marcar como pagado"></td>
+      <td style="text-align:center"><span onclick="delPlanRow('${r.id}')" title="borrar" style="cursor:pointer;color:var(--muted)">✕</span></td>`;
+    tb.appendChild(tr);
+  });
+
+  // Resumen por categoría (solo gastos no pagados, que son los que impactan)
+  const porCat={};
+  let total=0;
+  planGastos.forEach(r=>{
+    if(r.pagado) return;
+    const amt=parseFloat(r.amount)||0;
+    if(amt<=0) return;
+    porCat[r.cat]=(porCat[r.cat]||0)+amt;
+    total+=amt;
+  });
+  const resumen=document.getElementById('planResumen');
+  resumen.innerHTML='';
+  Object.keys(porCat).sort((a,b)=>porCat[b]-porCat[a]).forEach(cat=>{
+    const [bg,col]=CAT_COLORS[cat]||CAT_COLORS.otros;
+    const chip=document.createElement('span');
+    chip.style.cssText=`background:${bg};color:${col};border-radius:8px;padding:5px 10px;font-size:12px;font-family:'IBM Plex Mono',monospace`;
+    chip.textContent=`${cat}: ${fmtEur(porCat[cat])}`;
+    resumen.appendChild(chip);
+  });
+  document.getElementById('planTotal').textContent='total mes: '+fmtEur(total);
+}
+
+// Convierte las filas del plan (con fecha e importe) en previsiones para
+// que aparezcan en movimientos y previsiones. Solo las que tienen fecha.
+function planToForecasts(){
+  return planGastos
+    .filter(r=>r.date && !r.pagado && (parseFloat(r.amount)||0)>0)
+    .map(r=>({
+      date:r.date,
+      desc:r.desc||'Gasto planificado',
+      benef:r.benef||'—',
+      cat:r.cat,
+      amount:-Math.abs(parseFloat(r.amount)||0),  // el plan son gastos
+      type:'prev', source:'plan', id:r.id
+    }));
+}
+
 function addForecast(){
   const date=document.getElementById('nDate').value;
   const desc=document.getElementById('nDesc').value.trim();
@@ -968,7 +1103,9 @@ document.getElementById('nDate').value=fmt(nd);
 
 // Cargar previsiones guardadas de sesiones anteriores
 loadForecasts();
-if(forecasts.length){
+loadPlan();
+renderPlan();
+if(forecasts.length || planGastos.length){
   const bal=parseFloat(document.getElementById('manualBal').value)||0;
   if(bal>0) renderAll();
 }
