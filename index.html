@@ -649,6 +649,12 @@ function renderAll(){
     const d=new Date(today);d.setDate(d.getDate()-parseInt(rangeVal));
     cutoff=fmt(d);
   }
+  // Alternar tono de fondo por día: cada fecha distinta recibe una banda
+  // (par/impar) para distinguir visualmente los bloques de cada día.
+  const fechasUnicas=[...new Set(allTxs.map(t=>t.date))].sort();
+  const bandaDe={};
+  fechasUnicas.forEach((f,i)=>{ bandaDe[f]=i%2; });
+
   let shown=0, hidden=0;
   allTxs.forEach(t=>{
     b+=t.amount;
@@ -659,8 +665,11 @@ function renderAll(){
     const tr=document.createElement('tr');
     const ac=t.amount>=0?'tgreen':'tred';
     const as=(t.amount>=0?'+':'')+fmtEur(t.amount);
+    // Tono de fondo alternado por día (banda par/impar).
+    const banda=bandaDe[t.date];
+    tr.style.background = banda===0 ? 'transparent' : 'rgba(255,255,255,0.035)';
     const negativo=b<0 && t.date>=today2;  // solo futuro/hoy, no lo pasado
-    if(negativo) tr.style.background='rgba(239,68,68,0.12)';
+    if(negativo) tr.style.background='rgba(239,68,68,0.12)';  // el rojo manda sobre la banda
     const esEstimado=t.source==='cobros_est';
     if(esEstimado){ tr.style.opacity='0.72'; tr.style.fontStyle='italic'; }
     // Marcar el último movimiento real del día actual (saldo actual real).
