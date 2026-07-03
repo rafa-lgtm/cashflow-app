@@ -101,10 +101,11 @@
       <span class="api-label" style="margin-left:8px">saldo actual €</span>
       <input type="number" id="manualBal" placeholder="ej: 250000" style="width:130px">
       <span class="api-label" style="margin-left:8px">horizonte</span>
-      <select id="horizon" onchange="renderAll()" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 11px;font-size:12px;font-family:'IBM Plex Mono',monospace;color:var(--text);outline:none">
+      <select id="horizon" onchange="onHorizonChange()" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 11px;font-size:12px;font-family:'IBM Plex Mono',monospace;color:var(--text);outline:none">
         <option value="7">7 días</option>
         <option value="15">15 días</option>
-        <option value="30" selected>30 días</option>
+        <option value="30">30 días</option>
+        <option value="45" selected>45 días (5 sem)</option>
         <option value="60">60 días</option>
       </select>
       <button class="btn green" onclick="connectAirwallex()">▶ conectar</button>
@@ -838,6 +839,14 @@ function renderCharts(allTxs,startBal){
 // BD de pedidos. Si falla, permite pegar el JSON manualmente como fallback.
 // Formato esperado: [{"date":"2026-06-17","cex":6000,"ctt":3897}, ...]
 const COD_DASHBOARD_URL='https://web-production-cc26d.up.railway.app';
+
+// Al cambiar el horizonte, recargamos la previsión de cobros con el nuevo
+// número de días (silenciosa) y re-renderizamos. Si no hay conexión, al
+// menos re-renderiza con lo que haya.
+function onHorizonChange(){
+  loadCobros(true).then(()=>renderAll()).catch(()=>renderAll());
+}
+
 async function loadCobros(silent){
   let data=null;
   const H=parseInt(document.getElementById('horizon').value)||30;
