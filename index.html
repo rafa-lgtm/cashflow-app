@@ -446,6 +446,7 @@ async function connectAirwallex(){
       hasMore=!!data.has_more;page++;
     }
     updStep(s3,`✓ ${allTx.length} movimientos cargados`,'ok');
+    window.__allTx=allTx; // debug temporal: inspeccionar en consola
     parseFinancialTx(allTx);
   }catch(e){updStep(s3,'✗ '+e.message,'err');}
 
