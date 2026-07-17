@@ -570,8 +570,61 @@ function parseTransfers(items){
 }
 
 
+// ── Fusión de conversión de divisa + pago que financia ────────────
+// Una conversión genera 2 patas (compra divisa / vende EUR) con el mismo
+// source_id. Buscamos el PAYOUT en esa misma divisa, de importe parecido
+// y cercano en fecha, que gastó lo comprado. Si lo encontramos, fusionamos
+// las 3 líneas (BUY + SELL + PAYOUT) en 1 sola, mostrando el coste real en EUR.
+// Si no hay pareja clara, no tocamos nada (mejor no fusionar que fusionar mal).
+function mergeConversionPayouts(items){
+  const byGroup={};
+  items.forEach(t=>{
+    if((t.source_type||'')==='CONVERSION'){
+      const key=t.source_id||t.id;
+      (byGroup[key]=byGroup[key]||[]).push(t);
+    }
+  });
+  const payouts=items.filter(t=>/PAYOUT/.test((t.source_type||'')+(t.transaction_type||'')));
+  const usedIds=new Set();
+  const merged=[];
+  Object.values(byGroup).forEach(pair=>{
+    if(pair.length!==2) return; // solo parejas completas BUY+SELL
+    const eurLeg=pair.find(t=>t.currency==='EUR');
+    const fxLeg=pair.find(t=>t.currency!=='EUR');
+    if(!eurLeg||!fxLeg) return;
+    const fecha=new Date(fxLeg.settled_at||fxLeg.created_at);
+    let best=null,bestScore=Infinity;
+    payouts.forEach(p=>{
+      if(usedIds.has(p.id)) return;
+      if(p.currency!==fxLeg.currency) return;
+      if(Math.sign(p.amount)===Math.sign(fxLeg.amount)) return; // deben ir en sentido opuesto
+      const diffPct=Math.abs(Math.abs(p.amount)-Math.abs(fxLeg.amount))/Math.abs(fxLeg.amount);
+      const diffDias=Math.abs(new Date(p.settled_at||p.created_at)-fecha)/86400000;
+      if(diffPct>0.05||diffDias>5) return; // tolerancia: 5% importe, 5 dias
+      const score=diffPct*1000+diffDias;
+      if(score<bestScore){bestScore=score;best=p;}
+    });
+    if(best){
+      usedIds.add(best.id);usedIds.add(eurLeg.id);usedIds.add(fxLeg.id);
+      merged.push({
+        date:(best.settled_at||best.created_at||'').slice(0,10),
+        desc:(best.description||'Pago'),
+        benef:'—',
+        cat:guessCategoryByType(best.source_type,best.transaction_type,best.description,eurLeg.amount),
+        amount:eurLeg.amount,
+        currency:'EUR',
+        type:'real',
+        source:'fintx',
+        id:best.id
+      });
+    }
+  });
+  return {merged,usedIds};
+}
+
 function parseFinancialTx(items){
-  const parsed=items.map(t=>{
+  const {merged,usedIds}=mergeConversionPayouts(items);
+  const parsed=items.filter(t=>!usedIds.has(t.id)).map(t=>{
     const amt=parseFloat(t.amount ?? t.net ?? 0);
     // El tipo de movimiento para descripcion y categoria
     const stype=(t.source_type||'').toString();
@@ -608,17 +661,19 @@ function parseFinancialTx(items){
       id:t.id
     };
   }).filter(t=>t.date && !isNaN(t.amount) && t.amount!==0);
-  txs=[...txs.filter(t=>t.source!=='fintx'),...parsed];
+  const parsedFinal=[...parsed,...merged];
+  txs=[...txs.filter(t=>t.source!=='fintx'),...parsedFinal];
 
   // ── Verificación de saldo (visible en debug) ──────────────
   // El saldo actual (liveBal) es el punto de partida real de Airwallex.
   // Mostramos el desglose de movimientos EUR para poder cotejarlo a mano.
-  const inSum=parsed.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
-  const outSum=parsed.filter(t=>t.amount<0).reduce((s,t)=>s+t.amount,0);
-  const fx=parsed.filter(t=>t.cat==='divisa');
+  const inSum=parsedFinal.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
+  const outSum=parsedFinal.filter(t=>t.amount<0).reduce((s,t)=>s+t.amount,0);
+  const fx=parsedFinal.filter(t=>t.cat==='divisa');
   const fxNeto=fx.reduce((s,t)=>s+t.amount,0);
-  addStep(`✓ Movimientos EUR: ${parsed.length} · entradas ${fmtEur(inSum)} · salidas ${fmtEur(outSum)} · neto ${fmtEur(inSum+outSum)}`,'ok');
+  addStep(`✓ Movimientos EUR: ${parsedFinal.length} · entradas ${fmtEur(inSum)} · salidas ${fmtEur(outSum)} · neto ${fmtEur(inSum+outSum)}`,'ok');
   if(fx.length) addStep(`  · de los cuales ${fx.length} cambios de divisa (neto EUR ${fmtEur(fxNeto)})`,'ok');
+  if(merged.length) addStep(`  · ${merged.length} conversiones fusionadas con su pago (ya no aparecen como líneas sueltas)`,'ok');
   if(liveBal) addStep(`  · saldo actual Airwallex (total): ${fmtEur(liveBal)}`,'ok');
 }
 
