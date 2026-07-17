@@ -320,7 +320,22 @@ function setOverride(sel){
   saveOverrides();
   renderAll();
 }
-const BENEF_OPTIONS=['—','Mary','Jay','Sunny','Alibaba','ADS','Diego','Nabil','Devolución','CEX','CTT','Freelancers'];
+const BENEF_OPTIONS=['—','Mary','Jay','Sunny','Alibaba','ADS','Agencia','Diego','Nabil','Devolución','CEX','CTT','Freelancers'];
+const BENEF_COLORS={
+  'Mary':      ['rgba(230,126,34,.22)','#e67e22'],   // naranja
+  'Jay':       ['rgba(106,27,154,.28)','#c77dff'],   // morado
+  'Sunny':     ['rgba(133,177,232,.25)','#85b1e8'],  // azul claro
+  'Alibaba':   ['rgba(184,134,11,.28)','#d4a017'],   // dorado
+  'ADS':       ['rgba(68,136,255,.2)','#4488ff'],    // azul
+  'Agencia':   ['rgba(91,143,199,.25)','#5b8fc7'],   // azul acero
+  'Diego':     ['rgba(90,90,90,.35)','#b0b0b0'],     // gris
+  'Nabil':     ['rgba(139,195,74,.25)','#8bc34a'],   // verde
+  'Devolución':['rgba(120,120,120,.15)','#999'],     // gris neutro
+  'CEX':       ['rgba(255,214,0,.22)','#ffd600'],    // amarillo
+  'CTT':       ['rgba(255,90,90,.22)','#ff5a5a'],    // rojo/salmón
+  'Freelancers':['rgba(180,100,255,.15)','#b464ff'], // lila
+  '—':         ['transparent','var(--muted)'],
+};
 function catSelect(id,current){
   const [bg,col]=CAT_COLORS[current]||CAT_COLORS.otros;
   const opts=Object.keys(CAT_COLORS).map(c=>`<option value="${c}" ${c===current?'selected':''}>${c}</option>`).join('');
@@ -328,22 +343,44 @@ function catSelect(id,current){
 }
 function benefSelect(id,current){
   const cur=BENEF_OPTIONS.includes(current)?current:'—';
+  const [bg,col]=BENEF_COLORS[cur]||BENEF_COLORS['—'];
   const opts=BENEF_OPTIONS.map(b=>`<option value="${b}" ${b===cur?'selected':''}>${b}</option>`).join('');
-  return `<select data-id="${id}" data-field="benef" style="background:transparent;color:var(--muted);border:1px solid rgba(255,255,255,.1);border-radius:4px;font-size:10px;cursor:pointer;max-width:140px;font-family:inherit" onchange="setOverride(this)">${opts}</select>`;
+  return `<select data-id="${id}" data-field="benef" style="background:${bg};color:${col};border:1px solid rgba(255,255,255,.1);border-radius:4px;font-size:10px;cursor:pointer;max-width:140px;font-family:inherit" onchange="setOverride(this)">${opts}</select>`;
 }
 
 const CAT_COLORS={
-  marketing:['rgba(68,136,255,.15)','#4488ff'],     // azul
+  marketing:['rgba(133,177,232,.22)','#85b1e8'],    // azul claro
   freelancers:['rgba(180,100,255,.15)','#b464ff'],  // lila
-  ingresos:['rgba(0,208,132,.15)','#00d084'],       // verde
-  logistica:['rgba(255,200,0,.15)','#ffc800'],      // amarillo
-  proveedores:['rgba(255,200,0,.15)','#ffc800'],    // amarillo
+  ingresos:['rgba(168,198,134,.25)','#a8c686'],     // verde salvia
+  logistica:['rgba(230,126,34,.22)','#e67e22'],     // naranja
+  proveedores:['rgba(230,126,34,.22)','#e67e22'],   // naranja
   nominas:['rgba(255,90,140,.15)','#ff5a8c'],       // rosa
-  impuestos:['rgba(255,68,85,.15)','#ff4455'],      // rojo
+  impuestos:['rgba(255,90,90,.25)','#ff5a5a'],      // rojo
   divisa:['rgba(0,180,216,.15)','#00b4d8'],          // cian
   estimado:['rgba(140,160,180,.15)','#8ca0b4'],      // gris azulado
   otros:['rgba(120,120,120,.15)','#888'],            // gris
 };
+
+// ── Auto-emparejado por concepto ───────────────────────────────
+// Si la descripción del movimiento contiene uno de estos patrones, se
+// asigna beneficiario+categoría automáticamente. El override manual
+// (desplegable) siempre gana sobre esto si el usuario lo cambia.
+const CONCEPT_RULES=[
+  {re:/ningbo\s*wunan/i,               benef:'Jay',      cat:'proveedores'},
+  {re:/art\s*miracle/i,                benef:'Mary',     cat:'proveedores'},
+  {re:/ka\s*consulting/i,              benef:'Diego',    cat:'impuestos'},
+  {re:/trust\s*marketing/i,            benef:'Diego',    cat:'impuestos'},
+  {re:/adverstising\s*fortress|advertising\s*fortress/i, benef:'Agencia', cat:'marketing'},
+  {re:/ctt\s*express[\s\S]*reemb/i,    benef:'CTT',      cat:'ingresos'},   // reembolsos CTT -> ingreso
+  {re:/ctt\s*express/i,                benef:'CTT',      cat:'logistica'},
+  {re:/correos\s*express/i,            benef:'CEX',      cat:'logistica'},
+  {re:/liquidacion/i,                  benef:'CEX',      cat:'ingresos'},
+];
+function autoMatchConcept(desc){
+  const d=(desc||'');
+  for(const r of CONCEPT_RULES){ if(r.re.test(d)) return {benef:r.benef,cat:r.cat}; }
+  return null;
+}
 
 function guessCategory(ref,reason){
   const r=((ref||'')+(reason||'')).toLowerCase();
@@ -542,11 +579,12 @@ function parsePayments(items){
   const parsed=items.map(p=>{
     // source_amount = lo que sale en EUR de tu cuenta
     const eur=p.source_currency==='EUR'?p.source_amount:(p.amount_payer_pays||p.source_amount||0);
+    const auto=autoMatchConcept(p.reference);
     return{
       date:(p.payment_date||p.dispatch_date||p.created_at||'').slice(0,10),
       desc:p.reference||p.short_reference_id||'Pago',
-      benef:p.beneficiary?.bank_details?.account_name||'—',
-      cat:guessCategory(p.reference,p.reason),
+      benef:auto?auto.benef:(p.beneficiary?.bank_details?.account_name||'—'),
+      cat:auto?auto.cat:guessCategory(p.reference,p.reason),
       amount:-Math.abs(parseFloat(eur)||0),
       type:'real',id:p.payment_id
     };
@@ -606,11 +644,12 @@ function mergeConversionPayouts(items){
     });
     if(best){
       usedIds.add(best.id);usedIds.add(eurLeg.id);usedIds.add(fxLeg.id);
+      const auto=autoMatchConcept(best.description);
       merged.push({
         date:(best.settled_at||best.created_at||'').slice(0,10),
         desc:(best.description||'Pago'),
-        benef:'—',
-        cat:guessCategoryByType(best.source_type,best.transaction_type,best.description,eurLeg.amount),
+        benef:auto?auto.benef:'—',
+        cat:auto?auto.cat:guessCategoryByType(best.source_type,best.transaction_type,best.description,eurLeg.amount),
         amount:eurLeg.amount,
         currency:'EUR',
         type:'real',
@@ -652,8 +691,8 @@ function parseFinancialTx(items){
     return{
       date:(t.settled_at||t.created_at||'').slice(0,10),
       desc:desc,
-      benef:'—',
-      cat:guessCategoryByType(stype, ttype, desc, amt),
+      benef:autoMatchConcept(t.description)?.benef||'—',
+      cat:autoMatchConcept(t.description)?.cat||guessCategoryByType(stype, ttype, desc, amt),
       amount:amt,
       currency:t.currency||'EUR',
       type:'real',
