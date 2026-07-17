@@ -297,12 +297,47 @@ function loadPlan(){
   }catch(e){}
 }
 
+// ── Overrides manuales de categoría/beneficiario por movimiento real ──
+// Se guardan por id de transacción (el id de Airwallex es estable entre
+// recargas), así que la edición sobrevive aunque los datos se vuelvan
+// a cargar desde la API.
+const LS_OVERRIDES='cashflow_overrides_v1';
+let overrides={};
+function saveOverrides(){
+  try{ localStorage.setItem(LS_OVERRIDES, JSON.stringify(overrides)); }catch(e){}
+}
+function loadOverrides(){
+  try{
+    const raw=localStorage.getItem(LS_OVERRIDES);
+    if(raw){ const obj=JSON.parse(raw); if(obj&&typeof obj==='object') overrides=obj; }
+  }catch(e){}
+}
+function setOverride(sel){
+  const id=sel.dataset.id, field=sel.dataset.field, value=sel.value;
+  if(!id) return;
+  if(!overrides[id]) overrides[id]={};
+  overrides[id][field]=value;
+  saveOverrides();
+  renderAll();
+}
+const BENEF_OPTIONS=['—','Mary','Jay','Sunny','Alibaba','ADS','Diego','Nabil','Devolución','CEX','CTT','Freelancers'];
+function catSelect(id,current){
+  const [bg,col]=CAT_COLORS[current]||CAT_COLORS.otros;
+  const opts=Object.keys(CAT_COLORS).map(c=>`<option value="${c}" ${c===current?'selected':''}>${c}</option>`).join('');
+  return `<select class="cat-pill" data-id="${id}" data-field="cat" style="background:${bg};color:${col};border:none;cursor:pointer;font-size:11px;font-family:inherit" onchange="setOverride(this)">${opts}</select>`;
+}
+function benefSelect(id,current){
+  const cur=BENEF_OPTIONS.includes(current)?current:'—';
+  const opts=BENEF_OPTIONS.map(b=>`<option value="${b}" ${b===cur?'selected':''}>${b}</option>`).join('');
+  return `<select data-id="${id}" data-field="benef" style="background:transparent;color:var(--muted);border:1px solid rgba(255,255,255,.1);border-radius:4px;font-size:10px;cursor:pointer;max-width:140px;font-family:inherit" onchange="setOverride(this)">${opts}</select>`;
+}
+
 const CAT_COLORS={
   marketing:['rgba(68,136,255,.15)','#4488ff'],     // azul
   freelancers:['rgba(180,100,255,.15)','#b464ff'],  // lila
   ingresos:['rgba(0,208,132,.15)','#00d084'],       // verde
   logistica:['rgba(255,200,0,.15)','#ffc800'],      // amarillo
-  proveedores:['rgba(255,140,0,.15)','#ff8c00'],    // naranja
+  proveedores:['rgba(255,200,0,.15)','#ffc800'],    // amarillo
   nominas:['rgba(255,90,140,.15)','#ff5a8c'],       // rosa
   impuestos:['rgba(255,68,85,.15)','#ff4455'],      // rojo
   divisa:['rgba(0,180,216,.15)','#00b4d8'],          // cian
@@ -689,11 +724,18 @@ function renderAll(){
     const accionesPrev = t.type==='prev' && !esPlan
       ? ` <span onclick="editForecast('${t.id}')" title="editar" style="cursor:pointer;color:var(--muted);margin-left:6px">✎</span> <span onclick="delForecast('${t.id}')" title="borrar" style="cursor:pointer;color:var(--muted);margin-left:2px">✕</span>`
       : (esPlan?' <span title="editar en el planificador" style="color:var(--muted);margin-left:6px;font-size:9px">plan</span>':'');
+    // Movimientos reales: categoría y beneficiario editables via desplegable,
+    // con el valor manual (override) por encima del detectado automáticamente.
+    const ov=(t.type==='real')?(overrides[t.id]||{}):{};
+    const catFinal=ov.cat||t.cat;
+    const benefFinal=ov.benef||t.benef;
+    const catCell = t.type==='real' ? catSelect(t.id,catFinal) : catPill(catFinal);
+    const benefCell = t.type==='real' ? benefSelect(t.id,benefFinal) : (t.benef||'—');
     tr.innerHTML=`
       <td class="mono">${negativo?'⚠ ':''}${esHoy?'▶ ':''}<span style="color:var(--muted);font-size:10px">${diaSem}</span> ${t.date}${esHoy?' <span style="color:var(--green);font-size:9px">· HOY</span>':''}</td>
       <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.desc}</td>
-      <td class="mono" style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px">${t.benef||'—'}</td>
-      <td>${catPill(t.cat)}</td>
+      <td class="mono" style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px">${benefCell}</td>
+      <td>${catCell}</td>
       <td style="text-align:right" class="${ac}">${as}</td>
       <td style="${balStyle}" class="tbal">${fmtEur(b)}</td>
       <td>${tipoTag}${accionesPrev}</td>`;
@@ -1123,6 +1165,7 @@ document.getElementById('nDate').value=fmt(nd);
 // Cargar previsiones guardadas de sesiones anteriores
 loadForecasts();
 loadPlan();
+loadOverrides();
 renderPlan();
 if(forecasts.length || planGastos.length){
   const bal=parseFloat(document.getElementById('manualBal').value)||0;
